@@ -1,0 +1,437 @@
+import { randomUUID } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, extname, join, resolve } from "node:path";
+
+import type { ClipboardImage } from "./types.js";
+
+export const RECENT_IMAGE_ENV_VAR = "PI_IMAGE_TOOLS_RECENT_DIRS";
+export const RECENT_IMAGE_CACHE_DIR_ENV_VAR = "PI_IMAGE_TOOLS_RECENT_CACHE_DIR";
+
+const DEFAULT_MAX_RECENT_IMAGES = 30;
+const DEFAULT_MAX_CACHE_FILES = 160;
+
+const SCREENSHOT_NAME_PATTERNS: readonly RegExp[] = [
+  /^screenshot/i,
+  /^screen shot/i,
+  /^snip/i,
+  /^capture/i,
+  /^img_/i,
+  /^screenrecording/i,
+  /^屏幕截图/i,
+  /^スクリーンショット/i,
+];
+
+const EXTENSION_TO_MIME = new Map<string, string>([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+  [".gif", "image/gif"],
+  [".bmp", "image/bmp"],
+]);
+
+interface RecentImageSource {
+  path: string;
+  filterScreenshotNames: boolean;
+}
+
+export interface RecentImageCandidate {
+  path: string;
+  name: string;
+  mimeType: string;
+  modifiedAtMs: number;
+  sizeBytes: number;
+}
+
+export interface RecentImageDiscovery {
+  candidates: RecentImageCandidate[];
+  searchedDirectories: string[];
+}
+
+export interface DiscoverRecentImagesOptions {
+  platform?: NodeJS.Platform;
+  maxItems?: number;
+  homeDirectory?: string;
+  environment?: NodeJS.ProcessEnv;
+}
+
+export interface PersistRecentImageOptions {
+  maxCacheFiles?: number;
+  environment?: NodeJS.ProcessEnv;
+}
+
+function normalizeUserPath(value: string): string {
+  const trimmed = value.trim().replace(/^"|"$/g, "");
+  return trimmed;
+}
+
+function expandHomePath(value: string, homeDirectory: string): string {
+  if (value === "~") {
+    return homeDirectory;
+  }
+
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return join(homeDirectory, value.slice(2));
+  }
+
+  return value;
+}
+
+function normalizePath(pathValue: string, homeDirectory: string): string {
+  return resolve(expandHomePath(normalizeUserPath(pathValue), homeDirectory));
+}
+
+export function getRecentImageCacheDirectory(environment: NodeJS.ProcessEnv = process.env): string {
+  const homeDirectory = homedir();
+  const configuredPath = environment[RECENT_IMAGE_CACHE_DIR_ENV_VAR];
+
+  if (configuredPath && configuredPath.trim().length > 0) {
+    return normalizePath(configuredPath, homeDirectory);
+  }
+
+  return join(tmpdir(), "pi-image-tools", "recent-cache");
+}
+
+function parseConfiguredSources(environment: NodeJS.ProcessEnv, homeDirectory: string): string[] {
+  const configured = environment[RECENT_IMAGE_ENV_VAR]?.trim();
+  if (!configured) {
+    return [];
+  }
+
+  return configured
+    .split(";")
+    .map((value) => normalizePath(value, homeDirectory))
+    .filter((value) => value.length > 0);
+}
+
+function getDefaultWindowsSources(homeDirectory: string): RecentImageSource[] {
+  return [
+    {
+      path: join(homeDirectory, "Pictures", "Screenshots"),
+      filterScreenshotNames: false,
+    },
+    {
+      path: join(homeDirectory, "OneDrive", "Pictures", "Screenshots"),
+      filterScreenshotNames: false,
+    },
+    {
+      path: join(homeDirectory, "Desktop"),
+      filterScreenshotNames: true,
+    },
+  ];
+}
+
+function dedupeSources(sources: readonly RecentImageSource[]): RecentImageSource[] {
+  const deduped = new Map<string, RecentImageSource>();
+
+  for (const source of sources) {
+    const key = process.platform === "win32" ? source.path.toLowerCase() : source.path;
+    if (!deduped.has(key)) {
+      deduped.set(key, source);
+    }
+  }
+
+  return [...deduped.values()];
+}
+
+function isLikelyScreenshotName(name: string): boolean {
+  return SCREENSHOT_NAME_PATTERNS.some((pattern) => pattern.test(name));
+}
+
+function toMimeType(fileName: string): string | null {
+  const extension = extname(fileName).toLowerCase();
+  return EXTENSION_TO_MIME.get(extension) ?? null;
+}
+
+function extensionForMimeType(mimeType: string): string {
+  const normalized = mimeType.split(";")[0]?.trim().toLowerCase() ?? mimeType.toLowerCase();
+
+  switch (normalized) {
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    case "image/bmp":
+      return "bmp";
+    default:
+      return "png";
+  }
+}
+
+function listRecentImagesFromSource(source: RecentImageSource): RecentImageCandidate[] {
+  if (!existsSync(source.path)) {
+    return [];
+  }
+
+  let names: string[];
+  try {
+    names = readdirSync(source.path);
+  } catch {
+    return [];
+  }
+
+  const candidates: RecentImageCandidate[] = [];
+
+  for (const name of names) {
+    const mimeType = toMimeType(name);
+    if (!mimeType) {
+      continue;
+    }
+
+    if (source.filterScreenshotNames && !isLikelyScreenshotName(name)) {
+      continue;
+    }
+
+    const fullPath = join(source.path, name);
+
+    let stat;
+    try {
+      stat = statSync(fullPath);
+    } catch {
+      continue;
+    }
+
+    if (!stat.isFile()) {
+      continue;
+    }
+
+    candidates.push({
+      path: fullPath,
+      name,
+      mimeType,
+      modifiedAtMs: stat.mtimeMs,
+      sizeBytes: stat.size,
+    });
+  }
+
+  return candidates;
+}
+
+function buildSources(options: DiscoverRecentImagesOptions): RecentImageSource[] {
+  const platform = options.platform ?? process.platform;
+  const homeDirectory = options.homeDirectory ?? homedir();
+  const environment = options.environment ?? process.env;
+
+  if (platform !== "win32") {
+    return [];
+  }
+
+  const cacheSource: RecentImageSource = {
+    path: getRecentImageCacheDirectory(environment),
+    filterScreenshotNames: false,
+  };
+
+  const configuredPaths = parseConfiguredSources(environment, homeDirectory);
+  if (configuredPaths.length > 0) {
+    return dedupeSources([
+      cacheSource,
+      ...configuredPaths.map((pathValue) => ({
+        path: pathValue,
+        filterScreenshotNames: false,
+      })),
+    ]);
+  }
+
+  return dedupeSources([cacheSource, ...getDefaultWindowsSources(homeDirectory)]);
+}
+
+function dedupeCandidates(candidates: readonly RecentImageCandidate[]): RecentImageCandidate[] {
+  const deduped = new Map<string, RecentImageCandidate>();
+
+  for (const candidate of candidates) {
+    const key = process.platform === "win32" ? candidate.path.toLowerCase() : candidate.path;
+
+    const existing = deduped.get(key);
+    if (!existing || candidate.modifiedAtMs > existing.modifiedAtMs) {
+      deduped.set(key, candidate);
+    }
+  }
+
+  return [...deduped.values()];
+}
+
+export function discoverRecentImages(options: DiscoverRecentImagesOptions = {}): RecentImageDiscovery {
+  const sources = buildSources(options);
+  const searchedDirectories = sources.map((source) => source.path);
+  const maxItems = options.maxItems ?? DEFAULT_MAX_RECENT_IMAGES;
+
+  if (sources.length === 0) {
+    return {
+      candidates: [],
+      searchedDirectories,
+    };
+  }
+
+  const allCandidates = sources.flatMap((source) => listRecentImagesFromSource(source));
+  const sorted = dedupeCandidates(allCandidates).sort((left, right) => right.modifiedAtMs - left.modifiedAtMs);
+
+  return {
+    candidates: sorted.slice(0, Math.max(1, maxItems)),
+    searchedDirectories,
+  };
+}
+
+function pruneCacheDirectory(cacheDirectory: string, maxCacheFiles: number): void {
+  if (maxCacheFiles < 1 || !existsSync(cacheDirectory)) {
+    return;
+  }
+
+  let entries: string[];
+  try {
+    entries = readdirSync(cacheDirectory);
+  } catch {
+    return;
+  }
+
+  const imageFiles = entries
+    .map((name) => {
+      const fullPath = join(cacheDirectory, name);
+
+      try {
+        const stat = statSync(fullPath);
+        if (!stat.isFile()) {
+          return null;
+        }
+
+        if (!toMimeType(name)) {
+          return null;
+        }
+
+        return { fullPath, modifiedAtMs: stat.mtimeMs };
+      } catch {
+        return null;
+      }
+    })
+    .filter((entry): entry is { fullPath: string; modifiedAtMs: number } => entry !== null)
+    .sort((left, right) => right.modifiedAtMs - left.modifiedAtMs);
+
+  if (imageFiles.length <= maxCacheFiles) {
+    return;
+  }
+
+  for (const staleFile of imageFiles.slice(maxCacheFiles)) {
+    try {
+      unlinkSync(staleFile.fullPath);
+    } catch {
+      // Intentionally ignore cache cleanup failures.
+    }
+  }
+}
+
+export function persistImageToRecentCache(
+  image: ClipboardImage,
+  options: PersistRecentImageOptions = {},
+): string {
+  if (!image.bytes || image.bytes.length === 0) {
+    throw new Error("Cannot cache an empty image payload.");
+  }
+
+  const environment = options.environment ?? process.env;
+  const cacheDirectory = getRecentImageCacheDirectory(environment);
+  const extension = extensionForMimeType(image.mimeType);
+
+  mkdirSync(cacheDirectory, { recursive: true });
+
+  const filePath = join(cacheDirectory, `pi-recent-${Date.now()}-${randomUUID()}.${extension}`);
+  writeFileSync(filePath, Buffer.from(image.bytes));
+
+  const maxCacheFiles = options.maxCacheFiles ?? DEFAULT_MAX_CACHE_FILES;
+  pruneCacheDirectory(cacheDirectory, maxCacheFiles);
+
+  return filePath;
+}
+
+function formatRelativeAge(modifiedAtMs: number, nowMs: number): string {
+  const deltaMs = Math.max(0, nowMs - modifiedAtMs);
+  const deltaMinutes = Math.floor(deltaMs / 60_000);
+
+  if (deltaMinutes < 1) {
+    return "just now";
+  }
+
+  if (deltaMinutes < 60) {
+    return `${deltaMinutes}m ago`;
+  }
+
+  const deltaHours = Math.floor(deltaMinutes / 60);
+  if (deltaHours < 24) {
+    return `${deltaHours}h ago`;
+  }
+
+  const deltaDays = Math.floor(deltaHours / 24);
+  if (deltaDays < 30) {
+    return `${deltaDays}d ago`;
+  }
+
+  const deltaMonths = Math.floor(deltaDays / 30);
+  if (deltaMonths < 12) {
+    return `${deltaMonths}mo ago`;
+  }
+
+  const deltaYears = Math.floor(deltaMonths / 12);
+  return `${deltaYears}y ago`;
+}
+
+function formatSize(sizeBytes: number): string {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+
+  const units = ["KB", "MB", "GB"] as const;
+  let value = sizeBytes / 1024;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function abbreviatePath(pathValue: string, maxChars: number): string {
+  if (pathValue.length <= maxChars) {
+    return pathValue;
+  }
+
+  const fileName = basename(pathValue);
+  if (fileName.length + 4 >= maxChars) {
+    return `...${fileName.slice(-(maxChars - 3))}`;
+  }
+
+  const headLength = maxChars - fileName.length - 4;
+  return `${pathValue.slice(0, headLength)}...\\${fileName}`;
+}
+
+export function formatRecentImageLabel(candidate: RecentImageCandidate, nowMs = Date.now()): string {
+  const age = formatRelativeAge(candidate.modifiedAtMs, nowMs);
+  const size = formatSize(candidate.sizeBytes);
+  const shortPath = abbreviatePath(candidate.path, 64);
+
+  return `${candidate.name} • ${age} • ${size} • ${shortPath}`;
+}
+
+export function loadRecentImage(candidate: RecentImageCandidate): ClipboardImage {
+  const raw = readFileSync(candidate.path);
+  if (raw.length === 0) {
+    throw new Error(`File is empty: ${candidate.path}`);
+  }
+
+  return {
+    bytes: new Uint8Array(raw),
+    mimeType: candidate.mimeType,
+  };
+}
