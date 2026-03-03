@@ -1,47 +1,42 @@
-# pi-image-tools
+# 🖼️ pi-image-tools
 
 Image attachment and preview extension for the **Pi coding agent**.
 
-This extension focuses on one workflow: quickly attach a clipboard image (or pick a recent screenshot) to the message you are about to send, and then render an inline preview in the TUI chat.
+Quickly attach clipboard images or recent screenshots to your messages, with inline preview rendering in the TUI chat.
 
-> **Windows-only:** `pi-image-tools` only registers commands/shortcuts on Windows (`win32`). On macOS/Linux it does nothing.
+> ⚠️ **Windows-only:** This extension only registers commands and shortcuts on Windows (`win32`). On other platforms, it does nothing.
 
-![pi-image-tools](asset/pi-image-tools.png)
+![pi-image-tools preview](asset/pi-image-tools.png)
 
 ## Features
 
-- Paste images into your next message:
-  - `/paste-image clipboard` (default) reads an image from the clipboard and queues it for the next send.
-  - `/paste-image recent` opens a picker for recent screenshots/images and queues the selected file.
-- Keyboard shortcuts for fast paste:
-  - `alt+v`
-  - `ctrl+alt+v`
-- Inline image preview in the chat after you send your message (up to **3** images previewed per message).
-- Recent-images support:
-  - Searches common Windows screenshot locations by default.
-  - Caches images you pasted from clipboard so they also show up in the recent picker.
-- Preview modes:
-  - **Sixel** (preferred on Windows) when the PowerShell `Sixel` module is available.
-  - **Native** fallback rendering when Sixel conversion is unavailable.
+- **Clipboard paste** – Attach images directly from your clipboard
+- **Recent image picker** – Browse and select from recent screenshots
+- **Keyboard shortcuts** – Fast paste with `Alt+V` or `Ctrl+Alt+V`
+- **Inline preview** – See attached images rendered in the TUI (up to 3 per message)
+- **Sixel rendering** – High-quality terminal graphics when available
+- **Automatic caching** – Clipboard-pasted images appear in the recent picker
 
 ## Installation
 
-### Local extension folder
+### Extension Folder (Recommended)
 
-Place this folder in:
+Place this folder in one of these locations:
 
-- Global: `~/.pi/agent/extensions/pi-image-tools`
-- Project: `.pi/extensions/pi-image-tools`
+| Scope   | Path                                      |
+|---------|-------------------------------------------|
+| Global  | `~/.pi/agent/extensions/pi-image-tools`   |
+| Project | `.pi/extensions/pi-image-tools`           |
 
-Pi auto-discovers these paths.
+Pi auto-discovers extensions in these paths.
 
-### As an npm package
+### Via npm
 
 ```bash
 pi install npm:pi-image-tools
 ```
 
-Or from git:
+### Via Git
 
 ```bash
 pi install git:github.com/MasuRii/pi-image-tools
@@ -49,158 +44,158 @@ pi install git:github.com/MasuRii/pi-image-tools
 
 ## Usage
 
-### Paste from clipboard
+### Commands
 
-Command:
+#### Paste from Clipboard
 
 ```text
 /paste-image clipboard
 ```
 
-Notes:
+Or simply:
 
-- `/paste-image` (with no args) behaves the same as `/paste-image clipboard`.
-- The extension inserts a marker into your draft (`[󰈟 Image Attached]`). When you send, that marker is removed and the queued image(s) are attached to the outgoing message.
-- If you remove all markers from your draft before sending, the pending queued images are discarded.
+```text
+/paste-image
+```
 
-### Paste from recent images
+This reads an image from your clipboard and queues it for attachment. A marker (`[󰈟 Image Attached]`) appears in your draft. When you send the message, the marker is removed and the image is attached.
+
+> **Tip:** Remove all markers from your draft before sending to discard pending images.
+
+#### Paste from Recent Images
 
 ```text
 /paste-image recent
 ```
 
-This opens an interactive picker (requires Pi’s interactive TUI mode). The extension searches for recent images and shows a list like:
+Opens an interactive picker showing recent screenshots and cached images:
 
 ```text
 01. Screenshot 2026-03-02 142233.png • 2m ago • 412 KB • C:\Users\...\Pictures\Screenshots\...
+02. IMG_20260301_120000.png • 1d ago • 1.2 MB • C:\Users\...\Desktop\...
 ```
 
-After selection, the image is queued for your next send.
+Select an image to queue it for your next message.
 
-### Shortcuts
+### Keyboard Shortcuts
 
-These shortcuts are equivalent to `/paste-image clipboard`:
-
-- `alt+v`
-- `ctrl+alt+v`
-
-## Recent images: what gets searched
-
-`/paste-image recent` searches Windows paths in this order:
-
-1. The **recent cache directory** (images you pasted via clipboard are cached here).
-2. If configured via environment, the directories from `PI_IMAGE_TOOLS_RECENT_DIRS`.
-3. Otherwise, these defaults:
-   - `~/Pictures/Screenshots`
-   - `~/OneDrive/Pictures/Screenshots`
-   - `~/Desktop` (only files with screenshot-like names such as `Screenshot*`, `Snip*`, `IMG_*`, etc.)
-
-Supported file types: `.png`, `.jpg`/`.jpeg`, `.webp`, `.gif`, `.bmp`.
-
-### Environment variables
-
-- `PI_IMAGE_TOOLS_RECENT_DIRS`
-  - Semicolon-separated list of directories to search (Windows-style):
-    - Example: `C:\Users\you\Pictures\Screenshots;D:\Shares\Screens`
-- `PI_IMAGE_TOOLS_RECENT_CACHE_DIR`
-  - Overrides where clipboard-pasted images are cached.
-  - Default: `%TEMP%\pi-image-tools\recent-cache`
-
-## Preview rendering (native vs Sixel)
-
-When Pi displays a user message that contains image attachments, `pi-image-tools` renders an inline preview block under the message.
-
-- **Sixel preview (Windows):**
-  - The extension tries to detect (and, if missing, install) the PowerShell module `Sixel` under the current user.
-  - It then converts the image to a Sixel escape sequence via PowerShell and renders it inline.
-- **Native preview fallback:**
-  - If Sixel is unavailable or conversion fails, the extension renders via `@mariozechner/pi-tui`’s `Image` component.
-  - When a fallback is used, a warning line may be shown under the preview (and a one-time warning notification can appear on session start).
-
-Limit: only the first **3** images in a message are previewed.
-
-## Dependencies / PowerShell notes
-
-### Clipboard access
-
-- **Optional native module:** `@mariozechner/clipboard` (declared as an optional dependency).
-  - If it is available, `pi-image-tools` uses it first.
-- **PowerShell fallback (Windows):** if the native module is unavailable, the extension calls `powershell.exe` to read an image from the clipboard using .NET (`System.Windows.Forms.Clipboard`).
-
-### Sixel module
-
-- Sixel preview uses the **PowerShell module** `Sixel`.
-- `pi-image-tools` attempts to install it automatically (CurrentUser scope) using either `Install-Module` or `Install-PSResource` (depending on what your PowerShell supports).
-
-If your environment blocks module installation, you can install it manually (in a PowerShell prompt):
-
-```powershell
-Install-Module -Name Sixel -Scope CurrentUser -Force -AllowClobber
-```
+| Shortcut       | Action                    |
+|----------------|---------------------------|
+| `Alt+V`        | Paste image from clipboard|
+| `Ctrl+Alt+V`   | Paste image from clipboard|
 
 ## Configuration
 
-Runtime config is stored at:
+### Environment Variables
+
+| Variable                         | Description                                      | Default                               |
+|----------------------------------|--------------------------------------------------|---------------------------------------|
+| `PI_IMAGE_TOOLS_RECENT_DIRS`     | Semicolon-separated directories to search        | See default locations below           |
+| `PI_IMAGE_TOOLS_RECENT_CACHE_DIR`| Custom cache directory for clipboard images      | `%TEMP%\pi-image-tools\recent-cache`  |
+
+**Example:**
+
+```powershell
+$env:PI_IMAGE_TOOLS_RECENT_DIRS = "C:\Users\me\Pictures\Screenshots;D:\Shares\Screens"
+```
+
+### Default Search Locations
+
+The recent picker searches these Windows paths:
+
+1. **Cache directory** – Images previously pasted from clipboard
+2. `~/Pictures/Screenshots`
+3. `~/OneDrive/Pictures/Screenshots`
+4. `~/Desktop` – Only files with screenshot-like names (`Screenshot*`, `Snip*`, `IMG_*`, etc.)
+
+### Supported Image Formats
+
+`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.bmp`
+
+### Runtime Config
+
+A configuration file can be placed at:
 
 ```text
 ~/.pi/agent/extensions/pi-image-tools/config.json
 ```
 
-A starter file is included as:
-
-```text
-config/config.example.json
-```
-
-Currently the template only contains:
+See `config/config.example.json` for the template:
 
 ```json
-{ "enabled": true }
+{
+  "enabled": true
+}
 ```
+
+## Technical Details
+
+### Preview Rendering
+
+When you send a message with images, the extension renders an inline preview:
+
+| Mode   | Description                                                      |
+|--------|------------------------------------------------------------------|
+| Sixel  | High-quality graphics using PowerShell `Sixel` module (preferred)|
+| Native | Fallback using `@mariozechner/pi-tui` Image component            |
+
+- Maximum **3 images** previewed per message
+- Warnings displayed if Sixel is unavailable
+
+### Clipboard Access
+
+The extension uses multiple methods to read clipboard images:
+
+1. **Native module** – `@mariozechner/clipboard` (optional dependency)
+2. **PowerShell fallback** – Uses `System.Windows.Forms.Clipboard` via PowerShell
+
+### Sixel Module Auto-Installation
+
+The extension attempts to install the PowerShell `Sixel` module automatically (CurrentUser scope). If blocked by policy, install manually:
+
+```powershell
+Install-Module -Name Sixel -Scope CurrentUser -Force -AllowClobber
+```
+
+### Architecture
+
+| File                      | Purpose                                           |
+|---------------------------|---------------------------------------------------|
+| `index.ts`                | Root entrypoint for Pi auto-discovery             |
+| `src/commands.ts`         | `/paste-image` command registration               |
+| `src/keybindings.ts`      | Keyboard shortcut registration                    |
+| `src/clipboard.ts`        | Clipboard image reading (native + PowerShell)     |
+| `src/recent-images.ts`    | Recent image discovery and cache management       |
+| `src/image-preview.ts`    | Preview building and Sixel conversion             |
+| `src/inline-user-preview.ts` | TUI message patching for inline previews       |
+| `src/temp-file.ts`        | Temporary file management with cleanup            |
+| `src/types.ts`            | TypeScript type definitions                       |
 
 ## Troubleshooting
 
-### Nothing happens on `/paste-image` or shortcuts
-
-- This extension is **Windows-only**. On non-Windows platforms it does not register `/paste-image`.
-
-### “/paste-image recent requires interactive TUI mode.”
-
-- The recent picker uses an interactive selection UI. Run Pi in interactive mode (TUI) and retry.
-
-### “No image found in clipboard.”
-
-- Confirm you copied an actual image (not just a file path or text).
-- If clipboard reads are failing in general, PowerShell may be restricted by policy or your environment may not allow access to `System.Windows.Forms.Clipboard`.
-
-### Recent picker is empty
-
-- By default only a few directories are searched. Configure additional directories via `PI_IMAGE_TOOLS_RECENT_DIRS`.
-- Clipboard-pasted images are cached under `%TEMP%\pi-image-tools\recent-cache` (override with `PI_IMAGE_TOOLS_RECENT_CACHE_DIR`).
-
-### Preview shows a warning about Sixel
-
-- The extension falls back to native preview when the `Sixel` PowerShell module is missing or cannot be installed.
-- Install the module manually (see above) and restart Pi.
+| Issue | Solution |
+|-------|----------|
+| Nothing happens on `/paste-image` | Ensure you're on Windows. This extension is Windows-only. |
+| "requires interactive TUI mode" | Run Pi in interactive TUI mode to use the recent picker. |
+| "No image found in clipboard" | Confirm you copied an actual image, not a file path or text. |
+| Recent picker is empty | Add directories via `PI_IMAGE_TOOLS_RECENT_DIRS` or paste images from clipboard first. |
+| Sixel warning shown | Install the Sixel module manually (see above) and restart Pi. |
 
 ## Development
 
 ```bash
+# Type-check (build)
 npm run build
+
+# Lint
 npm run lint
+
+# Run tests
 npm run test
+
+# All checks
 npm run check
 ```
-
-## Project layout
-
-- `index.ts` - root Pi auto-discovery entrypoint
-- `src/commands.ts` - `/paste-image` command registration and argument handling
-- `src/keybindings.ts` - `alt+v` / `ctrl+alt+v` shortcut registration
-- `src/clipboard.ts` - clipboard image read (optional native module + PowerShell fallback)
-- `src/recent-images.ts` - recent discovery + cache management (`PI_IMAGE_TOOLS_RECENT_DIRS`, `PI_IMAGE_TOOLS_RECENT_CACHE_DIR`)
-- `src/image-preview.ts` - preview item building, Sixel conversion, and message renderer
-- `src/inline-user-preview.ts` - patches Pi TUI message rendering to show inline previews
 
 ## License
 
