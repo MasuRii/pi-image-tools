@@ -6,7 +6,7 @@ Quickly attach clipboard images or recent screenshots to your messages, with inl
 
 > ⚠️ **Windows-only:** This extension only registers commands and shortcuts on Windows (`win32`). On other platforms, it does nothing.
 
-![pi-image-tools preview](asset/pi-image-tools.png)
+![pi-image-tools preview](https://raw.githubusercontent.com/MasuRii/pi-image-tools/main/asset/pi-image-tools.png)
 
 ## Features
 
