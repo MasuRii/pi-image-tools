@@ -33,10 +33,6 @@ function getErrorMessage(error: unknown): string {
   return "Unknown error";
 }
 
-function isWindowsPlatform(platform: NodeJS.Platform = process.platform): boolean {
-  return platform === "win32";
-}
-
 function imageToBase64(image: ClipboardImage): string {
   return Buffer.from(image.bytes).toString("base64");
 }
@@ -143,10 +139,6 @@ function showRecentSelectionPreview(
 }
 
 export default function imageToolsExtension(pi: ExtensionAPI): void {
-  if (!isWindowsPlatform()) {
-    return;
-  }
-
   const pendingImages: PendingImage[] = [];
 
   registerInlineUserImagePreview(pi);

@@ -130,11 +130,56 @@ function getDefaultWindowsSources(homeDirectory: string): RecentImageSource[] {
   ];
 }
 
-function dedupeSources(sources: readonly RecentImageSource[]): RecentImageSource[] {
+function getDefaultLinuxSources(homeDirectory: string): RecentImageSource[] {
+  return [
+    {
+      path: join(homeDirectory, "Pictures", "Screenshots"),
+      filterScreenshotNames: false,
+    },
+    {
+      path: join(homeDirectory, "Pictures"),
+      filterScreenshotNames: true,
+    },
+    {
+      path: join(homeDirectory, "Downloads"),
+      filterScreenshotNames: true,
+    },
+    {
+      path: join(homeDirectory, "Desktop"),
+      filterScreenshotNames: true,
+    },
+  ];
+}
+
+function getDefaultMacSources(homeDirectory: string): RecentImageSource[] {
+  return [
+    {
+      path: join(homeDirectory, "Desktop"),
+      filterScreenshotNames: true,
+    },
+    {
+      path: join(homeDirectory, "Downloads"),
+      filterScreenshotNames: true,
+    },
+    {
+      path: join(homeDirectory, "Pictures", "Screenshots"),
+      filterScreenshotNames: false,
+    },
+    {
+      path: join(homeDirectory, "Pictures"),
+      filterScreenshotNames: true,
+    },
+  ];
+}
+
+function dedupeSources(
+  sources: readonly RecentImageSource[],
+  platform: NodeJS.Platform,
+): RecentImageSource[] {
   const deduped = new Map<string, RecentImageSource>();
 
   for (const source of sources) {
-    const key = process.platform === "win32" ? source.path.toLowerCase() : source.path;
+    const key = platform === "win32" ? source.path.toLowerCase() : source.path;
     if (!deduped.has(key)) {
       deduped.set(key, source);
     }
@@ -220,14 +265,26 @@ function listRecentImagesFromSource(source: RecentImageSource): RecentImageCandi
   return candidates;
 }
 
+function getPlatformDefaultSources(
+  platform: NodeJS.Platform,
+  homeDirectory: string,
+): RecentImageSource[] {
+  switch (platform) {
+    case "win32":
+      return getDefaultWindowsSources(homeDirectory);
+    case "linux":
+      return getDefaultLinuxSources(homeDirectory);
+    case "darwin":
+      return getDefaultMacSources(homeDirectory);
+    default:
+      return [];
+  }
+}
+
 function buildSources(options: DiscoverRecentImagesOptions): RecentImageSource[] {
   const platform = options.platform ?? process.platform;
   const homeDirectory = options.homeDirectory ?? homedir();
   const environment = options.environment ?? process.env;
-
-  if (platform !== "win32") {
-    return [];
-  }
 
   const cacheSource: RecentImageSource = {
     path: getRecentImageCacheDirectory(environment),
@@ -236,23 +293,29 @@ function buildSources(options: DiscoverRecentImagesOptions): RecentImageSource[]
 
   const configuredPaths = parseConfiguredSources(environment, homeDirectory);
   if (configuredPaths.length > 0) {
-    return dedupeSources([
-      cacheSource,
-      ...configuredPaths.map((pathValue) => ({
-        path: pathValue,
-        filterScreenshotNames: false,
-      })),
-    ]);
+    return dedupeSources(
+      [
+        cacheSource,
+        ...configuredPaths.map((pathValue) => ({
+          path: pathValue,
+          filterScreenshotNames: false,
+        })),
+      ],
+      platform,
+    );
   }
 
-  return dedupeSources([cacheSource, ...getDefaultWindowsSources(homeDirectory)]);
+  return dedupeSources([cacheSource, ...getPlatformDefaultSources(platform, homeDirectory)], platform);
 }
 
-function dedupeCandidates(candidates: readonly RecentImageCandidate[]): RecentImageCandidate[] {
+function dedupeCandidates(
+  candidates: readonly RecentImageCandidate[],
+  platform: NodeJS.Platform,
+): RecentImageCandidate[] {
   const deduped = new Map<string, RecentImageCandidate>();
 
   for (const candidate of candidates) {
-    const key = process.platform === "win32" ? candidate.path.toLowerCase() : candidate.path;
+    const key = platform === "win32" ? candidate.path.toLowerCase() : candidate.path;
 
     const existing = deduped.get(key);
     if (!existing || candidate.modifiedAtMs > existing.modifiedAtMs) {
@@ -264,6 +327,7 @@ function dedupeCandidates(candidates: readonly RecentImageCandidate[]): RecentIm
 }
 
 export function discoverRecentImages(options: DiscoverRecentImagesOptions = {}): RecentImageDiscovery {
+  const platform = options.platform ?? process.platform;
   const sources = buildSources(options);
   const searchedDirectories = sources.map((source) => source.path);
   const maxItems = options.maxItems ?? DEFAULT_MAX_RECENT_IMAGES;
@@ -276,7 +340,9 @@ export function discoverRecentImages(options: DiscoverRecentImagesOptions = {}):
   }
 
   const allCandidates = sources.flatMap((source) => listRecentImagesFromSource(source));
-  const sorted = dedupeCandidates(allCandidates).sort((left, right) => right.modifiedAtMs - left.modifiedAtMs);
+  const sorted = dedupeCandidates(allCandidates, platform).sort(
+    (left, right) => right.modifiedAtMs - left.modifiedAtMs,
+  );
 
   return {
     candidates: sorted.slice(0, Math.max(1, maxItems)),
@@ -402,6 +468,10 @@ function formatSize(sizeBytes: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function detectPathSeparator(pathValue: string): string {
+  return pathValue.includes("\\") ? "\\" : "/";
+}
+
 function abbreviatePath(pathValue: string, maxChars: number): string {
   if (pathValue.length <= maxChars) {
     return pathValue;
@@ -412,8 +482,9 @@ function abbreviatePath(pathValue: string, maxChars: number): string {
     return `...${fileName.slice(-(maxChars - 3))}`;
   }
 
+  const separator = detectPathSeparator(pathValue);
   const headLength = maxChars - fileName.length - 4;
-  return `${pathValue.slice(0, headLength)}...\\${fileName}`;
+  return `${pathValue.slice(0, headLength)}...${separator}${fileName}`;
 }
 
 export function formatRecentImageLabel(candidate: RecentImageCandidate, nowMs = Date.now()): string {
