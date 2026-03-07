@@ -8,6 +8,8 @@ import { Image, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { buildPreviewItems, type ImagePayload, type ImagePreviewItem } from "./image-preview.js";
 
 const SIXEL_IMAGE_LINE_MARKER = "\x1b_Gm=0;\x1b\\";
+const KITTY_IMAGE_LINE_MARKER = "\x1b_G";
+const ITERM_IMAGE_LINE_MARKER = "\x1b]1337;File=";
 
 type UserMessageRenderFn = (width: number) => string[];
 
@@ -78,7 +80,14 @@ function buildNativeLines(item: ImagePreviewItem, width: number): string[] {
 }
 
 function isInlineImageLine(line: string): boolean {
-  return line.startsWith(SIXEL_IMAGE_LINE_MARKER) || line.includes(SIXEL_IMAGE_LINE_MARKER);
+  return (
+    line.startsWith(SIXEL_IMAGE_LINE_MARKER) ||
+    line.includes(SIXEL_IMAGE_LINE_MARKER) ||
+    line.startsWith(KITTY_IMAGE_LINE_MARKER) ||
+    line.includes(KITTY_IMAGE_LINE_MARKER) ||
+    line.startsWith(ITERM_IMAGE_LINE_MARKER) ||
+    line.includes(ITERM_IMAGE_LINE_MARKER)
+  );
 }
 
 function fitLineToWidth(line: string, width: number): string {
