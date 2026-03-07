@@ -1,6 +1,6 @@
 {
   "name": "pi-image-tools",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Image attachment and rendering extension for Pi TUI",
   "type": "module",
   "main": "./index.ts",
