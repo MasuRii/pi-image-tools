@@ -1,6 +1,6 @@
 {
   "name": "pi-image-tools",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Image attachment and rendering extension for Pi TUI",
   "type": "module",
   "main": "./index.ts",
@@ -32,6 +32,14 @@
   ],
   "author": "MasuRii",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MasuRii/pi-image-tools.git"
+  },
+  "homepage": "https://github.com/MasuRii/pi-image-tools#readme",
+  "bugs": {
+    "url": "https://github.com/MasuRii/pi-image-tools/issues"
+  },
   "engines": {
     "node": ">=20"
   },
