@@ -1,6 +1,6 @@
 {
   "name": "pi-image-tools",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Image attachment and rendering extension for Pi TUI",
   "type": "module",
   "main": "./index.ts",
@@ -52,10 +52,10 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-tui": "*"
+    "@mariozechner/pi-coding-agent": "^0.62.0",
+    "@mariozechner/pi-tui": "^0.62.0"
   },
   "optionalDependencies": {
-    "@mariozechner/clipboard": "*"
+    "@mariozechner/clipboard": "^0.3.2"
   }
 }
