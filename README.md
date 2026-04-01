@@ -4,7 +4,8 @@ Image attachment and preview extension for the **Pi coding agent**.
 
 `pi-image-tools` lets you attach clipboard images or recent screenshots to your next user message, then preview them inline in the TUI before the message is sent.
 
-![pi-image-tools preview](https://raw.githubusercontent.com/MasuRii/pi-image-tools/main/asset/pi-image-tools.png)
+<img width="1360" height="752" alt="image" src="https://github.com/user-attachments/assets/c7b462c4-6316-495e-a3fa-5a7e22edd91f" />
+
 
 ## Features
 
