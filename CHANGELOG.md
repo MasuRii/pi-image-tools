@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.9] - 2026-04-01
+
+### Changed
+- Updated README image to use HTML tag for better npm display compatibility
+- Added npm keywords for improved package discoverability
+- Added Related Pi Extensions cross-linking section to README
+
 ## [1.0.8] - 2026-04-01
 
 ### Changed
