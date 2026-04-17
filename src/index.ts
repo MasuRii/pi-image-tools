@@ -1,6 +1,24 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 import { readClipboardImage } from "./clipboard.js";
+
+function ensureKeybindingsSetup(): void {
+  const keybindingsPath = join(getAgentDir(), "keybindings.json");
+  if (existsSync(keybindingsPath)) {
+    const config = JSON.parse(readFileSync(keybindingsPath, "utf-8"));
+    if (config["app.clipboard.pasteImage"] !== undefined) return;
+    config["app.clipboard.pasteImage"] = [];
+    writeFileSync(keybindingsPath, JSON.stringify(config, null, 2) + "\n");
+  } else {
+    writeFileSync(
+      keybindingsPath,
+      JSON.stringify({ "app.clipboard.pasteImage": [] }, null, 2) + "\n",
+    );
+  }
+}
 import { registerPasteImageCommand } from "./commands.js";
 import {
   IMAGE_PREVIEW_CUSTOM_TYPE,
@@ -139,6 +157,8 @@ function showRecentSelectionPreview(
 }
 
 export default function imageToolsExtension(pi: ExtensionAPI): void {
+  ensureKeybindingsSetup();
+
   const pendingImages: PendingImage[] = [];
 
   registerInlineUserImagePreview(pi);
