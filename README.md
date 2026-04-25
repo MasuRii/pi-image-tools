@@ -1,5 +1,7 @@
 # 🖼️ pi-image-tools
 
+[![npm version](https://img.shields.io/npm/v/pi-image-tools?style=flat-square)](https://www.npmjs.com/package/pi-image-tools) [![License](https://img.shields.io/github/license/MasuRii/pi-image-tools?style=flat-square)](LICENSE)
+
 Image attachment and preview extension for the **Pi coding agent**.
 
 `pi-image-tools` lets you attach clipboard images or recent screenshots to your next user message, then preview them inline in the TUI before the message is sent.
@@ -36,7 +38,7 @@ Place this folder in one of these locations:
 
 | Scope | Path |
 |-------|------|
-| Global | `~/.pi/agent/extensions/pi-image-tools` |
+| Global default | `~/.pi/agent/extensions/pi-image-tools` (respects `PI_CODING_AGENT_DIR`) |
 | Project | `.pi/extensions/pi-image-tools` |
 
 Pi auto-discovers extensions in those paths.
@@ -116,7 +118,8 @@ $env:PI_IMAGE_TOOLS_RECENT_DIRS = "C:\Users\me\Pictures\Screenshots;D:\Shares\Sc
 A config file can be placed at:
 
 ```text
-~/.pi/agent/extensions/pi-image-tools/config.json
+Default global path: ~/.pi/agent/extensions/pi-image-tools/config.json
+Actual global path: $PI_CODING_AGENT_DIR/extensions/pi-image-tools/config.json when PI_CODING_AGENT_DIR is set
 ```
 
 Starter template:

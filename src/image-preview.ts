@@ -7,6 +7,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   calculateImageRows,
   Container,
+  getCapabilities,
   getImageDimensions,
   Image,
   Spacer,
@@ -14,12 +15,19 @@ import {
   type Component,
 } from "@mariozechner/pi-tui";
 
+import { buildSixelRenderLines, ensureCompleteSixelSequence } from "./sixel-protocol.js";
+import {
+  DEFAULT_TERMINAL_IMAGE_WIDTH_CELLS,
+  type TerminalImageWidthOptions,
+  resolveTerminalImageWidthCells,
+} from "./terminal-image-width.js";
+
 export const IMAGE_PREVIEW_CUSTOM_TYPE = "pi-image-tools-preview";
-const DEFAULT_MAX_WIDTH_CELLS = 60;
 const MAX_IMAGES_PER_MESSAGE = 3;
 const POWER_SHELL_TIMEOUT_MS = 120_000;
 const POWER_SHELL_MAX_BUFFER_BYTES = 128 * 1024 * 1024;
-const SIXEL_IMAGE_LINE_MARKER = "\x1b_Gm=0;\x1b\\";
+const FORCE_SIXEL_ENV_VAR = "PI_IMAGE_TOOLS_FORCE_SIXEL";
+const DISABLE_SIXEL_ENV_VAR = "PI_IMAGE_TOOLS_DISABLE_SIXEL";
 
 export type ImagePayload = {
   type: "image";
@@ -61,10 +69,7 @@ class SixelImageComponent implements Component {
   invalidate(): void {}
 
   render(_width: number): string[] {
-    const safeRows = Math.max(1, Math.min(this.rows, 80));
-    const lines = Array.from({ length: Math.max(0, safeRows - 1) }, () => "");
-    const moveUp = safeRows > 1 ? `\x1b[${safeRows - 1}A` : "";
-    return [...lines, `${SIXEL_IMAGE_LINE_MARKER}${moveUp}${this.sequence}`];
+    return buildSixelRenderLines(this.sequence, this.rows);
   }
 }
 
@@ -88,8 +93,29 @@ function toRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function normalizeEnvValue(value: string | undefined): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function isTruthyEnvFlag(value: string | undefined): boolean {
+  const normalized = normalizeEnvValue(value);
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
 function shouldAttemptSixelRendering(): boolean {
-  return process.platform === "win32";
+  if (process.platform !== "win32") {
+    return false;
+  }
+
+  if (isTruthyEnvFlag(process.env[DISABLE_SIXEL_ENV_VAR])) {
+    return false;
+  }
+
+  if (isTruthyEnvFlag(process.env[FORCE_SIXEL_ENV_VAR])) {
+    return true;
+  }
+
+  return !getCapabilities().images;
 }
 
 function runPowerShellCommand(
@@ -226,10 +252,6 @@ function extensionForImageMimeType(mimeType: string): string {
   }
 }
 
-function normalizeSixelSequence(value: string): string {
-  return value.replace(/\r?\n/g, "").replace(/\s+$/g, "");
-}
-
 function escapePowerShellSingleQuoted(value: string): string {
   return value.replace(/'/g, "''");
 }
@@ -280,7 +302,7 @@ Write-Output $rendered
       };
     }
 
-    const normalized = normalizeSixelSequence(result.stdout);
+    const normalized = ensureCompleteSixelSequence(result.stdout);
     if (!normalized) {
       return { error: "Sixel conversion produced empty output." };
     }
@@ -324,7 +346,7 @@ function parseImagePreviewDetails(value: unknown): ImagePreviewDetails | null {
     const maxWidthCells =
       typeof itemRecord.maxWidthCells === "number" && Number.isFinite(itemRecord.maxWidthCells)
         ? Math.max(4, Math.min(Math.trunc(itemRecord.maxWidthCells), 240))
-        : DEFAULT_MAX_WIDTH_CELLS;
+        : DEFAULT_TERMINAL_IMAGE_WIDTH_CELLS;
     const sixelSequence =
       typeof itemRecord.sixelSequence === "string" ? itemRecord.sixelSequence : undefined;
     const data = typeof itemRecord.data === "string" ? itemRecord.data : undefined;
@@ -356,17 +378,23 @@ function parseImagePreviewDetails(value: unknown): ImagePreviewDetails | null {
   return { items };
 }
 
-export function buildPreviewItems(images: readonly ImagePayload[]): ImagePreviewItem[] {
+export type BuildPreviewItemsOptions = TerminalImageWidthOptions;
+
+export function buildPreviewItems(
+  images: readonly ImagePayload[],
+  options: BuildPreviewItemsOptions = {},
+): ImagePreviewItem[] {
   const selectedImages = images.slice(0, MAX_IMAGES_PER_MESSAGE);
   if (selectedImages.length === 0) {
     return [];
   }
 
+  const maxWidthCells = resolveTerminalImageWidthCells(options);
   const attemptSixel = shouldAttemptSixelRendering();
   const sixelState = attemptSixel ? ensureSixelModuleAvailable() : undefined;
 
   return selectedImages.map((image) => {
-    const rows = estimateImageRows(image, DEFAULT_MAX_WIDTH_CELLS);
+    const rows = estimateImageRows(image, maxWidthCells);
 
     if (attemptSixel && sixelState?.available) {
       const conversion = convertImageToSixelSequence(image);
@@ -375,7 +403,7 @@ export function buildPreviewItems(images: readonly ImagePayload[]): ImagePreview
           protocol: "sixel",
           mimeType: image.mimeType,
           rows,
-          maxWidthCells: DEFAULT_MAX_WIDTH_CELLS,
+          maxWidthCells,
           sixelSequence: conversion.sequence,
         };
       }
@@ -384,7 +412,7 @@ export function buildPreviewItems(images: readonly ImagePayload[]): ImagePreview
         protocol: "native",
         mimeType: image.mimeType,
         rows,
-        maxWidthCells: DEFAULT_MAX_WIDTH_CELLS,
+        maxWidthCells,
         data: image.data,
         warning: conversion.error,
       };
@@ -394,7 +422,7 @@ export function buildPreviewItems(images: readonly ImagePayload[]): ImagePreview
       protocol: "native",
       mimeType: image.mimeType,
       rows,
-      maxWidthCells: DEFAULT_MAX_WIDTH_CELLS,
+      maxWidthCells,
       data: image.data,
       warning:
         attemptSixel && sixelState && !sixelState.available

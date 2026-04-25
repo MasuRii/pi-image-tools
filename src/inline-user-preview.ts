@@ -6,10 +6,8 @@ import {
 import { Image, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
 import { buildPreviewItems, type ImagePayload, type ImagePreviewItem } from "./image-preview.js";
-
-const SIXEL_IMAGE_LINE_MARKER = "\x1b_Gm=0;\x1b\\";
-const KITTY_IMAGE_LINE_MARKER = "\x1b_G";
-const ITERM_IMAGE_LINE_MARKER = "\x1b]1337;File=";
+import { buildSixelRenderLines, isInlineImageProtocolLine } from "./sixel-protocol.js";
+import { setActiveTerminalImageSettingsCwd } from "./terminal-image-width.js";
 
 type UserMessageRenderFn = (width: number) => string[];
 
@@ -49,17 +47,6 @@ interface InteractiveModeLike {
   };
 }
 
-function sanitizeRows(rows: number): number {
-  return Math.max(1, Math.min(Math.trunc(rows), 80));
-}
-
-function buildSixelLines(sequence: string, rows: number): string[] {
-  const safeRows = sanitizeRows(rows);
-  const lines = Array.from({ length: Math.max(0, safeRows - 1) }, () => "");
-  const moveUp = safeRows > 1 ? `\x1b[${safeRows - 1}A` : "";
-  return [...lines, `${SIXEL_IMAGE_LINE_MARKER}${moveUp}${sequence}`];
-}
-
 function buildNativeLines(item: ImagePreviewItem, width: number): string[] {
   if (!item.data) {
     return [];
@@ -79,20 +66,9 @@ function buildNativeLines(item: ImagePreviewItem, width: number): string[] {
   return image.render(Math.max(8, width));
 }
 
-function isInlineImageLine(line: string): boolean {
-  return (
-    line.startsWith(SIXEL_IMAGE_LINE_MARKER) ||
-    line.includes(SIXEL_IMAGE_LINE_MARKER) ||
-    line.startsWith(KITTY_IMAGE_LINE_MARKER) ||
-    line.includes(KITTY_IMAGE_LINE_MARKER) ||
-    line.startsWith(ITERM_IMAGE_LINE_MARKER) ||
-    line.includes(ITERM_IMAGE_LINE_MARKER)
-  );
-}
-
 function fitLineToWidth(line: string, width: number): string {
   const safeWidth = Math.max(1, Math.floor(width));
-  if (isInlineImageLine(line)) {
+  if (isInlineImageProtocolLine(line)) {
     return line;
   }
 
@@ -118,7 +94,7 @@ function renderPreviewLines(items: readonly ImagePreviewItem[], width: number): 
     lines.push("");
 
     if (item.protocol === "sixel" && item.sixelSequence) {
-      lines.push(...buildSixelLines(item.sixelSequence, item.rows));
+      lines.push(...buildSixelRenderLines(item.sixelSequence, item.rows));
     } else {
       lines.push(...buildNativeLines(item, width));
     }
@@ -340,15 +316,18 @@ export function registerInlineUserImagePreview(pi: ExtensionAPI): void {
     }, 25);
   };
 
-  pi.on("session_start", async () => {
+  pi.on("session_start", async (_event, ctx) => {
+    setActiveTerminalImageSettingsCwd(ctx.cwd);
     schedulePatch();
   });
 
-  pi.on("before_agent_start", async () => {
+  pi.on("before_agent_start", async (_event, ctx) => {
+    setActiveTerminalImageSettingsCwd(ctx.cwd);
     schedulePatch();
   });
 
-  pi.on("session_switch", async () => {
+  pi.on("session_switch", async (_event, ctx) => {
+    setActiveTerminalImageSettingsCwd(ctx.cwd);
     schedulePatch();
   });
 }

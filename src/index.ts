@@ -114,28 +114,33 @@ function buildRecentImageEmptyStateMessage(searchedDirectories: readonly string[
 function showRecentSelectionPreview(
   pi: ExtensionAPI,
   image: ClipboardImage,
+  cwd: string,
 ): void {
-  const previewItems = buildPreviewItems([
-    {
-      type: "image",
-      data: imageToBase64(image),
-      mimeType: image.mimeType,
-    },
-  ]);
+  const previewItems = buildPreviewItems(
+    [
+      {
+        type: "image",
+        data: imageToBase64(image),
+        mimeType: image.mimeType,
+      },
+    ],
+    { cwd },
+  );
 
   if (previewItems.length === 0) {
     return;
   }
 
-  pi.sendMessage(
-    {
-      customType: IMAGE_PREVIEW_CUSTOM_TYPE,
-      content: "",
-      display: true,
-      details: { items: previewItems },
-    },
-    { triggerTurn: false },
-  );
+  const previewMessage = {
+    customType: IMAGE_PREVIEW_CUSTOM_TYPE,
+    content: "",
+    display: true,
+    details: { items: previewItems },
+  };
+
+  setTimeout(() => {
+    pi.sendMessage(previewMessage, { triggerTurn: false });
+  }, 0);
 }
 
 export default function imageToolsExtension(pi: ExtensionAPI): void {
@@ -201,7 +206,7 @@ export default function imageToolsExtension(pi: ExtensionAPI): void {
       const selectedImage = loadRecentImage(selectedCandidate);
 
       try {
-        showRecentSelectionPreview(pi, selectedImage);
+        showRecentSelectionPreview(pi, selectedImage, ctx.cwd);
       } catch (error) {
         ctx.ui.notify(`Could not render recent image preview: ${getErrorMessage(error)}`, "warning");
       }
