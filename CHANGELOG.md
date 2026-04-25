@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.10] - 2026-04-25
+## [1.0.11] - 2026-04-25
 
 ### Changed
 - Avoid Pi's built-in image paste shortcut by default while preserving the previous primary shortcut when users disable or rebind `app.clipboard.pasteImage` (thanks to @danielcherubini for reporting this in PR #3).
