@@ -2,6 +2,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 import { readClipboardImage } from "./clipboard.js";
 import { registerPasteImageCommand } from "./commands.js";
+import { loadImageToolsConfig } from "./config.js";
+import { DebugLogger } from "./debug-logger.js";
 import {
   IMAGE_PREVIEW_CUSTOM_TYPE,
   buildPreviewItems,
@@ -144,7 +146,14 @@ function showRecentSelectionPreview(
 }
 
 export default function imageToolsExtension(pi: ExtensionAPI): void {
+  const config = loadImageToolsConfig();
+  const logger = DebugLogger.create(config);
   const pendingImages: PendingImage[] = [];
+
+  logger.log("extension.initialize", {
+    debug: config.debug,
+    pasteImageShortcutsConfigured: config.shortcuts.pasteImage !== undefined,
+  });
 
   registerInlineUserImagePreview(pi);
   registerImagePreviewDisplay(pi);
@@ -249,7 +258,7 @@ export default function imageToolsExtension(pi: ExtensionAPI): void {
     };
   });
 
-  registerImagePasteKeybindings(pi, pasteImageFromClipboard);
+  registerImagePasteKeybindings(pi, pasteImageFromClipboard, { config, logger });
   registerPasteImageCommand(pi, {
     fromClipboard: pasteImageFromClipboard,
     fromRecent: pasteImageFromRecent,

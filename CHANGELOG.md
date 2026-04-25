@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.10] - 2026-04-25
+
+### Changed
+- Avoid Pi's built-in image paste shortcut by default while preserving the previous primary shortcut when users disable or rebind `app.clipboard.pasteImage` (thanks to @danielcherubini for reporting this in PR #3).
+- Replaced the placeholder `enabled` config with validated `debug`, explicit `shortcuts.pasteImage`, configurable built-in conflict avoidance, and built-in warning suppression settings.
+- Removed obsolete packaged README image assets now that the README uses a GitHub-hosted image.
+
 ## [1.0.9] - 2026-04-01
 
 ### Changed
@@ -53,12 +60,8 @@
 - Rewrote README.md with professional documentation standards
 - Added comprehensive feature documentation, configuration reference, and usage examples
 
-## 1.0.1
-
-- Included `asset/` in the npm package whitelist so README image assets ship in the tarball.
-
 ## 1.0.0
 
 - Standardized repository layout to `src/` + root shim entrypoint.
 - Added TypeScript/Bundler project config, package metadata, and publish whitelist.
-- Added standard docs, license, and config template/runtime placeholder files.
+- Added standard docs, license, and initial runtime config files.

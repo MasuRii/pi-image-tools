@@ -1,3 +1,8 @@
 {
-  "enabled": true
+  "debug": false,
+  "shortcuts": {
+    "pasteImage": ["ctrl+alt+v"],
+    "avoidBuiltinConflicts": true,
+    "suppressBuiltinConflictWarnings": true
+  }
 }

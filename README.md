@@ -95,8 +95,16 @@ Selecting an entry queues that image for your next message.
 
 | Platform | Shortcuts |
 |----------|-----------|
-| Windows | `Alt+V`, `Ctrl+Alt+V` |
-| Linux / macOS | `Ctrl+V`, `Alt+V`, `Ctrl+Alt+V` |
+| Windows | `Ctrl+Alt+V`; `Alt+V` when Pi's built-in `app.clipboard.pasteImage` shortcut is disabled or rebound |
+| Linux / macOS | `Alt+V`, `Ctrl+Alt+V`; `Ctrl+V` when Pi's built-in `app.clipboard.pasteImage` shortcut is disabled or rebound |
+
+Pi's built-in image paste shortcut is not overridden by default. To keep the previous primary shortcut behavior without startup conflict warnings, disable the built-in binding manually in `~/.pi/agent/keybindings.json`:
+
+```json
+{
+  "app.clipboard.pasteImage": []
+}
+```
 
 ## Configuration
 
@@ -126,11 +134,84 @@ Starter template:
 
 ```json
 {
-  "enabled": true
+  "debug": false,
+  "shortcuts": {
+    "pasteImage": ["ctrl+alt+v"],
+    "avoidBuiltinConflicts": true,
+    "suppressBuiltinConflictWarnings": true
+  }
 }
 ```
 
 See `config/config.example.json` for the same template.
+
+#### Debug logging
+
+Debug logging is disabled by default. Set `debug` to `true` to append debug events to `debug/debug.log` inside the extension directory:
+
+```json
+{
+  "debug": true,
+  "shortcuts": {
+    "pasteImage": ["ctrl+alt+v"],
+    "avoidBuiltinConflicts": true,
+    "suppressBuiltinConflictWarnings": true
+  }
+}
+```
+
+When `debug` is `false` or omitted, no debug log file is opened or written.
+
+#### Custom shortcuts
+
+Set `shortcuts.pasteImage` to choose the exact shortcuts registered by `pi-image-tools`. The value can be a single shortcut string or an array of shortcut strings. Add multiple entries when you want several key combinations to run the same paste-image action:
+
+```json
+{
+  "debug": false,
+  "shortcuts": {
+    "pasteImage": ["ctrl+alt+v", "alt+v", "ctrl+shift+v"],
+    "avoidBuiltinConflicts": true,
+    "suppressBuiltinConflictWarnings": true
+  }
+}
+```
+
+A single shortcut is also valid:
+
+```json
+{
+  "debug": false,
+  "shortcuts": {
+    "pasteImage": "ctrl+alt+v",
+    "avoidBuiltinConflicts": true,
+    "suppressBuiltinConflictWarnings": true
+  }
+}
+```
+
+Config changes are applied the next time the extension loads, so restart Pi or reload extensions after editing `config.json`.
+
+Not every terminal can transmit every key combination to Pi. Triple-modifier shortcuts such as `ctrl+shift+alt+v` may be intercepted by the OS, terminal, shell, SSH, or tmux before Pi can see them. If a configured shortcut does not work, try a simpler shortcut such as `ctrl+alt+v`, `ctrl+shift+v`, `alt+p`, `f8`, or another function key.
+
+Keep `shortcuts.avoidBuiltinConflicts` set to `true` to skip configured paste-image shortcuts that overlap any effective Pi built-in shortcut. Keep `shortcuts.suppressBuiltinConflictWarnings` set to `true` when your goal is specifically to remove Pi's startup conflict warning noise. Both options use the same safe mechanism: `pi-image-tools` does not register the overlapping shortcut, so Pi has nothing to warn about. For example, `ctrl+p` is skipped because Pi uses it for built-in model/session actions.
+
+If both options are `false`, Pi handles conflicts itself. Non-reserved built-in conflicts may be taken over by `pi-image-tools`, but Pi can still print a startup warning. Reserved built-in shortcuts cannot be stolen through the extension shortcut API; Pi skips those registrations before `pi-image-tools` can handle them. To use a reserved Pi shortcut, rebind or disable the relevant built-in action in `~/.pi/agent/keybindings.json`, then restart Pi or reload extensions.
+
+Use an empty array to disable the extension's paste-image shortcuts while keeping `/paste-image` available:
+
+```json
+{
+  "debug": false,
+  "shortcuts": {
+    "pasteImage": [],
+    "avoidBuiltinConflicts": true,
+    "suppressBuiltinConflictWarnings": true
+  }
+}
+```
+
+If `shortcuts.pasteImage` is omitted, `pi-image-tools` uses non-conflicting defaults and automatically restores the previous primary shortcut when Pi's built-in `app.clipboard.pasteImage` binding is disabled or rebound.
 
 ## Default recent-image search locations
 
@@ -202,16 +283,16 @@ pi-image-tools/
 │   ├── index.ts                # Extension bootstrap and message flow
 │   ├── commands.ts             # /paste-image command registration
 │   ├── clipboard.ts            # Cross-platform clipboard image reading
+│   ├── config.ts               # Runtime config loading and validation
+│   ├── debug-logger.ts         # File-based debug logging
 │   ├── recent-images.ts        # Recent image discovery and cache management
 │   ├── image-preview.ts        # Preview building and Sixel/native rendering
 │   ├── inline-user-preview.ts  # Inline preview patching for user messages
 │   ├── keybindings.ts          # Keyboard shortcut registration
 │   ├── temp-file.ts            # Temporary file management and cleanup
 │   └── types.ts                # Shared TypeScript types
-├── config/
-│   └── config.example.json     # Starter runtime config
-└── asset/
-    └── pi-image-tools.png      # README preview image
+└── config/
+    └── config.example.json     # Starter runtime config
 ```
 
 ## Troubleshooting
