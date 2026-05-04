@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -114,6 +114,9 @@ const imagePreviewModule = await import(pathToFileURL(join(TEST_DIST_DIR, "src",
 const terminalWidthModule = await import(
   pathToFileURL(join(TEST_DIST_DIR, "src", "terminal-image-width.js")).href
 );
+const imageMimeModule = await import(pathToFileURL(join(TEST_DIST_DIR, "src", "image-mime.js")).href);
+const recentImagesModule = await import(pathToFileURL(join(TEST_DIST_DIR, "src", "recent-images.js")).href);
+const sixelProtocolModule = await import(pathToFileURL(join(TEST_DIST_DIR, "src", "sixel-protocol.js")).href);
 
 const { buildPreviewItems } = imagePreviewModule;
 const {
@@ -121,6 +124,9 @@ const {
   resolveTerminalImageWidthCells,
   setActiveTerminalImageSettingsCwd,
 } = terminalWidthModule;
+const { extensionToMimeType, mimeTypeToExtension, normalizeMimeType, selectPreferredImageMimeType } = imageMimeModule;
+const { persistImageToRecentCache, loadRecentImage } = recentImagesModule;
+const { ensureCompleteSixelSequence } = sixelProtocolModule;
 
 const originalCwd = process.cwd();
 
@@ -196,6 +202,105 @@ test("resolveTerminalImageWidthCells falls back to the documented default for in
     });
 
     assert.equal(width, DEFAULT_TERMINAL_IMAGE_WIDTH_CELLS);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+
+test("Sixel protocol normalization wraps bare converter output as complete DCS", () => {
+  const normalized = ensureCompleteSixelSequence("q\"1;1;1;1#0~~\n");
+
+  assert.equal(normalized.startsWith("\x1bPq"), true);
+  assert.equal(normalized.endsWith("\x1b\\"), true);
+  assert.equal(normalized.includes("\n"), false);
+  assert.equal(ensureCompleteSixelSequence("abc"), "\x1bPqabc\x1b\\");
+  assert.equal(ensureCompleteSixelSequence(""), "");
+});
+
+test("shared image MIME utilities normalize parameters and preserve preferred mappings", () => {
+  assert.equal(normalizeMimeType(" Image/PNG ; charset=binary "), "image/png");
+  assert.equal(selectPreferredImageMimeType(["text/plain", "image/jpeg; quality=1"]), "image/jpeg; quality=1");
+  assert.equal(extensionToMimeType(".jpeg"), "image/jpeg");
+  assert.equal(mimeTypeToExtension("image/bmp; charset=binary"), "bmp");
+});
+
+test("recent-cache pruning preserves non-extension-owned image files", () => {
+  const fixture = createFixture();
+  const cacheDirectory = join(fixture.projectDir, "cache");
+  const oldOwnedFile = join(
+    cacheDirectory,
+    "pi-recent-1-00000000-0000-4000-8000-000000000000.png",
+  );
+  const userFile = join(cacheDirectory, "family.png");
+
+  try {
+    mkdirSync(cacheDirectory, { recursive: true });
+    writeFileSync(oldOwnedFile, Buffer.from([1]));
+    writeFileSync(userFile, Buffer.from([2]));
+    const oldDate = new Date("2026-01-01T00:00:00Z");
+    utimesSync(oldOwnedFile, oldDate, oldDate);
+    utimesSync(userFile, oldDate, oldDate);
+
+    const createdFile = persistImageToRecentCache(
+      { bytes: new Uint8Array([3]), mimeType: "image/png" },
+      {
+        maxCacheFiles: 1,
+        environment: { PI_IMAGE_TOOLS_RECENT_CACHE_DIR: cacheDirectory },
+      },
+    );
+
+    assert.equal(existsSync(createdFile), true);
+    assert.equal(existsSync(oldOwnedFile), false);
+    assert.equal(existsSync(userFile), true);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("recent image attachment loads enforce the configured max image byte limit", () => {
+  const fixture = createFixture();
+  const imagePath = join(fixture.projectDir, "oversized.png");
+
+  try {
+    writeFileSync(imagePath, Buffer.from([1, 2]));
+
+    assert.throws(
+      () =>
+        loadRecentImage(
+          {
+            path: imagePath,
+            name: "oversized.png",
+            mimeType: "image/png",
+            modifiedAtMs: Date.now(),
+            sizeBytes: 2,
+          },
+          { PI_IMAGE_TOOLS_MAX_IMAGE_BYTES: "1" },
+        ),
+      /Recent image oversized\.png is too large/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("recent-cache writes enforce the configured max image byte limit", () => {
+  const fixture = createFixture();
+
+  try {
+    assert.throws(
+      () =>
+        persistImageToRecentCache(
+          { bytes: new Uint8Array([1, 2]), mimeType: "image/png" },
+          {
+            environment: {
+              PI_IMAGE_TOOLS_RECENT_CACHE_DIR: join(fixture.projectDir, "cache"),
+              PI_IMAGE_TOOLS_MAX_IMAGE_BYTES: "1",
+            },
+          },
+        ),
+      /Cached image is too large/,
+    );
   } finally {
     fixture.cleanup();
   }

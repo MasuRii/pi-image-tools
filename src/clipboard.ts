@@ -1,6 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
+import { isErrnoException } from "./errors.js";
+import { normalizeMimeType, selectPreferredImageMimeType, SUPPORTED_IMAGE_MIME_TYPES } from "./image-mime.js";
+import { runPowerShellCommand } from "./powershell.js";
 import type { ClipboardImage, ClipboardModule } from "./types.js";
 
 const require = createRequire(import.meta.url);
@@ -8,14 +11,6 @@ const require = createRequire(import.meta.url);
 const LIST_TYPES_TIMEOUT_MS = 1000;
 const READ_TIMEOUT_MS = 5000;
 const MAX_BUFFER_BYTES = 50 * 1024 * 1024;
-const SUPPORTED_IMAGE_MIME_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "image/bmp",
-] as const;
-
 let cachedClipboardModule: ClipboardModule | null | undefined;
 
 interface CommandResult {
@@ -29,37 +24,12 @@ interface ClipboardReadResult {
   image: ClipboardImage | null;
 }
 
-function isErrnoException(error: Error): error is NodeJS.ErrnoException {
-  return "code" in error;
-}
-
 function hasGraphicalSession(platform: NodeJS.Platform, environment: NodeJS.ProcessEnv): boolean {
   return platform !== "linux" || Boolean(environment.DISPLAY || environment.WAYLAND_DISPLAY);
 }
 
 function isWaylandSession(environment: NodeJS.ProcessEnv): boolean {
   return Boolean(environment.WAYLAND_DISPLAY) || environment.XDG_SESSION_TYPE === "wayland";
-}
-
-function normalizeMimeType(mimeType: string): string {
-  return mimeType.split(";")[0]?.trim().toLowerCase() ?? mimeType.toLowerCase();
-}
-
-function selectPreferredImageMimeType(mimeTypes: readonly string[]): string | null {
-  const normalized = mimeTypes
-    .map((mimeType) => mimeType.trim())
-    .filter((mimeType) => mimeType.length > 0)
-    .map((mimeType) => ({ raw: mimeType, normalized: normalizeMimeType(mimeType) }));
-
-  for (const preferredMimeType of SUPPORTED_IMAGE_MIME_TYPES) {
-    const match = normalized.find((mimeType) => mimeType.normalized === preferredMimeType);
-    if (match) {
-      return match.raw;
-    }
-  }
-
-  const firstImage = normalized.find((mimeType) => mimeType.normalized.startsWith("image/"));
-  return firstImage?.raw ?? null;
 }
 
 function loadClipboardModule(
@@ -141,10 +111,6 @@ function runCommand(
   };
 }
 
-function encodePowerShell(script: string): string {
-  return Buffer.from(script, "utf16le").toString("base64");
-}
-
 function readClipboardImageViaPowerShell(): ClipboardReadResult {
   const script = `
 $ErrorActionPreference = 'Stop'
@@ -170,33 +136,18 @@ try {
 }
 `;
 
-  const result = spawnSync(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-STA",
-      "-EncodedCommand",
-      encodePowerShell(script),
-    ],
-    {
-      encoding: "utf8",
-      timeout: READ_TIMEOUT_MS,
-      maxBuffer: MAX_BUFFER_BYTES,
-      windowsHide: true,
-    },
-  );
+  const result = runPowerShellCommand(script, {
+    encoded: true,
+    sta: true,
+    timeout: READ_TIMEOUT_MS,
+    maxBuffer: MAX_BUFFER_BYTES,
+  });
 
-  if (result.error) {
-    return {
-      available: !isErrnoException(result.error) || result.error.code !== "ENOENT",
-      image: null,
-    };
+  if (result.missingCommand) {
+    return { available: false, image: null };
   }
 
-  if (result.status !== 0) {
+  if (!result.ok) {
     return { available: true, image: null };
   }
 

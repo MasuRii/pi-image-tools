@@ -2,19 +2,12 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { getExtensionRoot, type ImageToolsConfig } from "./config.js";
+import { getErrorMessage } from "./errors.js";
 
 const DEBUG_DIRECTORY_NAME = "debug";
 const DEBUG_LOG_FILE_NAME = "debug.log";
 
 type DebugFields = Record<string, unknown>;
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  return "Unknown error";
-}
 
 export class DebugLogger {
   private readonly logPath: string | undefined;

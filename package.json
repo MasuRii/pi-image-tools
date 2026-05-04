@@ -57,10 +57,10 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.70.2",
-    "@mariozechner/pi-tui": "^0.70.2"
+    "@mariozechner/pi-coding-agent": "^0.72.0",
+    "@mariozechner/pi-tui": "^0.72.0"
   },
   "optionalDependencies": {
-    "@mariozechner/clipboard": "^0.3.3"
+    "@mariozechner/clipboard": "^0.3.5"
   }
 }

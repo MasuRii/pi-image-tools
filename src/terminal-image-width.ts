@@ -1,6 +1,8 @@
 import { SettingsManager, getAgentDir } from "@mariozechner/pi-coding-agent";
 import { resolve } from "node:path";
 
+import { isRecord } from "./config.js";
+
 export const DEFAULT_TERMINAL_IMAGE_WIDTH_CELLS = 60;
 
 export interface TerminalImageWidthOptions {
@@ -42,7 +44,7 @@ function normalizeImageWidthCells(value: unknown): number {
 }
 
 function readRawImageWidthCells(settings: unknown): unknown {
-  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+  if (!isRecord(settings)) {
     return undefined;
   }
 

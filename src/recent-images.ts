@@ -11,6 +11,8 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 
+import { extensionToMimeType, mimeTypeToExtension } from "./image-mime.js";
+import { assertImageWithinByteLimit, formatByteLimit } from "./image-size.js";
 import type { ClipboardImage } from "./types.js";
 
 export const RECENT_IMAGE_ENV_VAR = "PI_IMAGE_TOOLS_RECENT_DIRS";
@@ -29,15 +31,6 @@ const SCREENSHOT_NAME_PATTERNS: readonly RegExp[] = [
   /^屏幕截图/i,
   /^スクリーンショット/i,
 ];
-
-const EXTENSION_TO_MIME = new Map<string, string>([
-  [".png", "image/png"],
-  [".jpg", "image/jpeg"],
-  [".jpeg", "image/jpeg"],
-  [".webp", "image/webp"],
-  [".gif", "image/gif"],
-  [".bmp", "image/bmp"],
-]);
 
 interface RecentImageSource {
   path: string;
@@ -193,27 +186,11 @@ function isLikelyScreenshotName(name: string): boolean {
 }
 
 function toMimeType(fileName: string): string | null {
-  const extension = extname(fileName).toLowerCase();
-  return EXTENSION_TO_MIME.get(extension) ?? null;
+  return extensionToMimeType(extname(fileName));
 }
 
-function extensionForMimeType(mimeType: string): string {
-  const normalized = mimeType.split(";")[0]?.trim().toLowerCase() ?? mimeType.toLowerCase();
-
-  switch (normalized) {
-    case "image/png":
-      return "png";
-    case "image/jpeg":
-      return "jpg";
-    case "image/webp":
-      return "webp";
-    case "image/gif":
-      return "gif";
-    case "image/bmp":
-      return "bmp";
-    default:
-      return "png";
-  }
+function isExtensionOwnedCacheFileName(name: string): boolean {
+  return /^pi-recent-\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/i.test(name);
 }
 
 function listRecentImagesFromSource(source: RecentImageSource): RecentImageCandidate[] {
@@ -372,7 +349,7 @@ function pruneCacheDirectory(cacheDirectory: string, maxCacheFiles: number): voi
           return null;
         }
 
-        if (!toMimeType(name)) {
+        if (!isExtensionOwnedCacheFileName(name) || !toMimeType(name)) {
           return null;
         }
 
@@ -406,8 +383,9 @@ export function persistImageToRecentCache(
   }
 
   const environment = options.environment ?? process.env;
+  assertImageWithinByteLimit(image.bytes.length, "Cached image", environment);
   const cacheDirectory = getRecentImageCacheDirectory(environment);
-  const extension = extensionForMimeType(image.mimeType);
+  const extension = mimeTypeToExtension(image.mimeType);
 
   mkdirSync(cacheDirectory, { recursive: true });
 
@@ -451,23 +429,6 @@ function formatRelativeAge(modifiedAtMs: number, nowMs: number): string {
   return `${deltaYears}y ago`;
 }
 
-function formatSize(sizeBytes: number): string {
-  if (sizeBytes < 1024) {
-    return `${sizeBytes} B`;
-  }
-
-  const units = ["KB", "MB", "GB"] as const;
-  let value = sizeBytes / 1024;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
-}
-
 function detectPathSeparator(pathValue: string): string {
   return pathValue.includes("\\") ? "\\" : "/";
 }
@@ -489,13 +450,17 @@ function abbreviatePath(pathValue: string, maxChars: number): string {
 
 export function formatRecentImageLabel(candidate: RecentImageCandidate, nowMs = Date.now()): string {
   const age = formatRelativeAge(candidate.modifiedAtMs, nowMs);
-  const size = formatSize(candidate.sizeBytes);
+  const size = formatByteLimit(candidate.sizeBytes);
   const shortPath = abbreviatePath(candidate.path, 64);
 
   return `${candidate.name} • ${age} • ${size} • ${shortPath}`;
 }
 
-export function loadRecentImage(candidate: RecentImageCandidate): ClipboardImage {
+export function loadRecentImage(
+  candidate: RecentImageCandidate,
+  environment: NodeJS.ProcessEnv = process.env,
+): ClipboardImage {
+  assertImageWithinByteLimit(candidate.sizeBytes, `Recent image ${candidate.name}`, environment);
   const raw = readFileSync(candidate.path);
   if (raw.length === 0) {
     throw new Error(`File is empty: ${candidate.path}`);

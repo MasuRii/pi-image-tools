@@ -5,6 +5,9 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Image, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
+import { isRecord } from "./config.js";
+import type { DebugLogger } from "./debug-logger.js";
+import { getErrorMessage } from "./errors.js";
 import { buildPreviewItems, type ImagePayload, type ImagePreviewItem } from "./image-preview.js";
 import { buildSixelRenderLines, isInlineImageProtocolLine } from "./sixel-protocol.js";
 import { setActiveTerminalImageSettingsCwd } from "./terminal-image-width.js";
@@ -108,19 +111,15 @@ function renderPreviewLines(items: readonly ImagePreviewItem[], width: number): 
 }
 
 function toUserMessage(value: unknown): UserMessageLike {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-
-  return value as UserMessageLike;
+  return isRecord(value) ? value : {};
 }
 
 function toImageContent(value: unknown): UserImageContent | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return null;
   }
 
-  const record = value as Record<string, unknown>;
+  const record = value;
   if (record.type !== "image") {
     return null;
   }
@@ -237,7 +236,19 @@ function assignPreviewItemsToLatestUserMessage(
   }
 }
 
-function patchInteractiveMode(): void {
+function logInlinePreviewError(
+  logger: DebugLogger | undefined,
+  event: string,
+  error: unknown,
+): void {
+  try {
+    logger?.log(event, { error: getErrorMessage(error) });
+  } catch {
+    // Debug logging is best-effort inside Pi event handlers.
+  }
+}
+
+function patchInteractiveMode(logger?: DebugLogger): void {
   const prototype = (InteractiveMode as unknown as { prototype: InteractiveModePrototype }).prototype;
   if (!prototype) {
     return;
@@ -281,7 +292,8 @@ function patchInteractiveMode(): void {
     if (imagePayloads.length > 0) {
       try {
         previewItems = buildPreviewItems(imagePayloads);
-      } catch {
+      } catch (error) {
+        logInlinePreviewError(logger, "inline-user-preview.build_preview_failed", error);
         previewItems = [];
       }
     }
@@ -303,31 +315,53 @@ function patchInteractiveMode(): void {
   prototype.__piImageToolsPreviewPatched = true;
 }
 
-export function registerInlineUserImagePreview(pi: ExtensionAPI): void {
-  const schedulePatch = (): void => {
-    setTimeout(() => {
-      patchInteractiveMode();
-      patchUserMessageRender();
-    }, 0);
+export interface RegisterInlineUserImagePreviewOptions {
+  logger?: DebugLogger;
+}
 
+export function registerInlineUserImagePreview(
+  pi: ExtensionAPI,
+  options: RegisterInlineUserImagePreviewOptions = {},
+): void {
+  const runPatch = (delayMs: number): void => {
     setTimeout(() => {
-      patchInteractiveMode();
-      patchUserMessageRender();
-    }, 25);
+      try {
+        patchInteractiveMode(options.logger);
+        patchUserMessageRender();
+      } catch (error) {
+        logInlinePreviewError(options.logger, "inline-user-preview.patch_failed", error);
+      }
+    }, delayMs);
+  };
+
+  const schedulePatch = (): void => {
+    runPatch(0);
+    runPatch(25);
+  };
+
+  const handleSessionEvent = (eventName: string, cwd: string | undefined): void => {
+    try {
+      setActiveTerminalImageSettingsCwd(cwd);
+      schedulePatch();
+    } catch (error) {
+      logInlinePreviewError(options.logger, `inline-user-preview.${eventName}_failed`, error);
+    }
   };
 
   pi.on("session_start", async (_event, ctx) => {
-    setActiveTerminalImageSettingsCwd(ctx.cwd);
-    schedulePatch();
+    handleSessionEvent("session_start", ctx.cwd);
   });
 
   pi.on("before_agent_start", async (_event, ctx) => {
-    setActiveTerminalImageSettingsCwd(ctx.cwd);
-    schedulePatch();
+    handleSessionEvent("before_agent_start", ctx.cwd);
   });
 
-  pi.on("session_switch", async (_event, ctx) => {
-    setActiveTerminalImageSettingsCwd(ctx.cwd);
-    schedulePatch();
+  const onSessionSwitch = pi.on as unknown as (
+    event: "session_switch",
+    handler: (_event: unknown, ctx: { cwd?: string }) => Promise<void>,
+  ) => void;
+
+  onSessionSwitch("session_switch", async (_event, ctx) => {
+    handleSessionEvent("session_switch", ctx.cwd);
   });
 }

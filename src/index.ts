@@ -4,6 +4,8 @@ import { readClipboardImage } from "./clipboard.js";
 import { registerPasteImageCommand } from "./commands.js";
 import { loadImageToolsConfig } from "./config.js";
 import { DebugLogger } from "./debug-logger.js";
+import { getErrorMessage } from "./errors.js";
+import { assertImageWithinByteLimit } from "./image-size.js";
 import {
   IMAGE_PREVIEW_CUSTOM_TYPE,
   buildPreviewItems,
@@ -27,15 +29,8 @@ const IMAGE_ATTACHMENT_INDICATOR = "[󰈟 Image Attached]";
 
 interface PendingImage extends ImagePayload {}
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  return "Unknown error";
-}
-
 function imageToBase64(image: ClipboardImage): string {
+  assertImageWithinByteLimit(image.bytes.length, "Image attachment");
   return Buffer.from(image.bytes).toString("base64");
 }
 
@@ -155,8 +150,8 @@ export default function imageToolsExtension(pi: ExtensionAPI): void {
     pasteImageShortcutsConfigured: config.shortcuts.pasteImage !== undefined,
   });
 
-  registerInlineUserImagePreview(pi);
-  registerImagePreviewDisplay(pi);
+  registerInlineUserImagePreview(pi, { logger });
+  registerImagePreviewDisplay(pi, { logger });
 
   const pasteImageFromClipboard = async (ctx: PasteContext): Promise<void> => {
     if (!ctx.hasUI) {
