@@ -114,6 +114,7 @@ Pi's built-in image paste shortcut is not overridden by default. To keep the pre
 |----------|-------------|---------|
 | `PI_IMAGE_TOOLS_RECENT_DIRS` | Semicolon-separated directories to search for recent images | Platform defaults listed below |
 | `PI_IMAGE_TOOLS_RECENT_CACHE_DIR` | Custom cache directory for clipboard-pasted images | OS temp dir + `pi-image-tools/recent-cache` |
+| `PI_IMAGE_TOOLS_MAX_IMAGE_BYTES` | Maximum accepted image payload size before attachment, recent-cache writes, and preview conversion | `20971520` (20 MB) |
 
 Example:
 
@@ -254,8 +255,10 @@ When you queue one or more images, the extension renders an inline preview insid
 
 Preview behavior:
 - up to **3 images** are previewed per message
-- Sixel rendering is attempted on Windows when available
+- Sixel rendering is attempted on Windows when the PowerShell `Sixel` module is already installed
+- no PowerShell modules are installed automatically at runtime
 - native TUI image rendering is used as the fallback
+- image payloads over `PI_IMAGE_TOOLS_MAX_IMAGE_BYTES` are rejected before attachment, recent-cache writes, or Sixel conversion
 - inline width fitting now preserves Sixel, Kitty, and iTerm image protocol rows instead of truncating them like plain text
 
 ### Clipboard readers
@@ -285,11 +288,16 @@ pi-image-tools/
 │   ├── clipboard.ts            # Cross-platform clipboard image reading
 │   ├── config.ts               # Runtime config loading and validation
 │   ├── debug-logger.ts         # File-based debug logging
+│   ├── errors.ts               # Shared error normalization
+│   ├── image-mime.ts           # Shared image MIME and extension mapping
+│   ├── image-size.ts           # Shared image byte-size limits
 │   ├── recent-images.ts        # Recent image discovery and cache management
 │   ├── image-preview.ts        # Preview building and Sixel/native rendering
 │   ├── inline-user-preview.ts  # Inline preview patching for user messages
 │   ├── keybindings.ts          # Keyboard shortcut registration
-│   ├── temp-file.ts            # Temporary file management and cleanup
+│   ├── powershell.ts           # Shared PowerShell command runner
+│   ├── sixel-protocol.ts       # Sixel protocol normalization and render lines
+│   ├── terminal-image-width.ts # Terminal image width settings resolution
 │   └── types.ts                # Shared TypeScript types
 └── config/
     └── config.example.json     # Starter runtime config
