@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.0] - 2026-05-03
+
+### Added
+- Added centralized image MIME, image-size, PowerShell, and error utilities used by clipboard, preview, attachment, and recent-image flows.
+- Added size-limit enforcement for image attachments, recent-cache writes, recent-image loads, and Sixel preview conversion through `PI_IMAGE_TOOLS_MAX_IMAGE_BYTES`.
+
+### Changed
+- Reworked recent-image caching to use an extension-owned cache directory with safe pruning that preserves user files.
+- Reworked Sixel preview rendering to use an existing PowerShell `Sixel` module only, normalize converter output into complete terminal sequences, and fall back to native previews with actionable warnings.
+- Reworked terminal image width resolution to honor Pi project/global `terminal.imageWidthCells` settings with a documented default fallback.
+
+### Fixed
+- Prevented extension debug logging from writing terminal output; debug events now remain file-based and disabled by default.
+- Preserved Sixel, Kitty, and iTerm inline image protocol rows during preview width fitting.
+
 ## [1.0.11] - 2026-04-25
 
 ### Changed
