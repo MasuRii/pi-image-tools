@@ -2,8 +2,8 @@ import {
   type ExtensionAPI,
   InteractiveMode,
   UserMessageComponent,
-} from "@mariozechner/pi-coding-agent";
-import { Image, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { Image, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { isRecord } from "./config.js";
 import type { DebugLogger } from "./debug-logger.js";
@@ -288,16 +288,6 @@ function patchInteractiveMode(logger?: DebugLogger): void {
       : 0;
 
     const imagePayloads = extractImagePayloads(message);
-    let previewItems: ImagePreviewItem[] = [];
-    if (imagePayloads.length > 0) {
-      try {
-        previewItems = buildPreviewItems(imagePayloads);
-      } catch (error) {
-        logInlinePreviewError(logger, "inline-user-preview.build_preview_failed", error);
-        previewItems = [];
-      }
-    }
-
     const original = prototype.__piImageToolsOriginalAddMessageToChat;
     if (!original) {
       return;
@@ -305,11 +295,21 @@ function patchInteractiveMode(logger?: DebugLogger): void {
 
     original.call(this, message, options);
 
-    if (previewItems.length === 0) {
+    if (imagePayloads.length === 0) {
       return;
     }
 
-    assignPreviewItemsToLatestUserMessage(mode, beforeCount, previewItems);
+    void buildPreviewItems(imagePayloads, { logger })
+      .then((previewItems) => {
+        if (previewItems.length === 0) {
+          return;
+        }
+
+        assignPreviewItemsToLatestUserMessage(mode, beforeCount, previewItems);
+      })
+      .catch((error: unknown) => {
+        logInlinePreviewError(logger, "inline-user-preview.build_preview_failed", error);
+      });
   };
 
   prototype.__piImageToolsPreviewPatched = true;

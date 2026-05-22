@@ -24,7 +24,7 @@ interface ClipboardReadResult {
   image: ClipboardImage | null;
 }
 
-function hasGraphicalSession(platform: NodeJS.Platform, environment: NodeJS.ProcessEnv): boolean {
+export function hasGraphicalSession(platform: NodeJS.Platform, environment: NodeJS.ProcessEnv): boolean {
   return platform !== "linux" || Boolean(environment.DISPLAY || environment.WAYLAND_DISPLAY);
 }
 
