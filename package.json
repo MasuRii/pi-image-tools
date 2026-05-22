@@ -1,6 +1,6 @@
 {
   "name": "pi-image-tools",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Image attachment and rendering extension for Pi TUI",
   "type": "module",
   "main": "./index.ts",
@@ -16,10 +16,11 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npx --yes -p typescript@5.7.3 tsc -p tsconfig.json --noCheck",
-    "lint": "npm run build",
+    "typecheck": "npx --yes -p typescript@5.7.3 tsc -p tsconfig.json --noEmit",
+    "build": "npm run typecheck",
+    "lint": "npm run typecheck",
     "test": "node --test",
-    "check": "npm run lint && npm run test"
+    "check": "npm run build && npm run test"
   },
   "keywords": [
     "pi-package",
@@ -33,7 +34,9 @@
     "image-preview",
     "clipboard",
     "preview",
-    "windows"
+    "windows",
+    "linux",
+    "cross-platform"
   ],
   "author": "MasuRii",
   "license": "MIT",
@@ -57,10 +60,10 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.72.0",
-    "@mariozechner/pi-tui": "^0.72.0"
+    "@earendil-works/pi-coding-agent": "^0.75.4",
+    "@earendil-works/pi-tui": "^0.75.4"
   },
   "optionalDependencies": {
-    "@mariozechner/clipboard": "^0.3.5"
+    "@mariozechner/clipboard": "^0.3.6"
   }
 }
