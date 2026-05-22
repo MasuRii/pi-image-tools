@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { readClipboardImage } from "./clipboard.js";
 import { registerPasteImageCommand } from "./commands.js";
@@ -108,12 +108,13 @@ function buildRecentImageEmptyStateMessage(searchedDirectories: readonly string[
   ].join(" ");
 }
 
-function showRecentSelectionPreview(
+async function showRecentSelectionPreview(
   pi: ExtensionAPI,
   image: ClipboardImage,
   cwd: string,
-): void {
-  const previewItems = buildPreviewItems(
+  logger: DebugLogger,
+): Promise<void> {
+  const previewItems = await buildPreviewItems(
     [
       {
         type: "image",
@@ -121,7 +122,7 @@ function showRecentSelectionPreview(
         mimeType: image.mimeType,
       },
     ],
-    { cwd },
+    { cwd, logger },
   );
 
   if (previewItems.length === 0) {
@@ -209,11 +210,9 @@ export default function imageToolsExtension(pi: ExtensionAPI): void {
       const selectedCandidate = discovery.candidates[selectedIndex];
       const selectedImage = loadRecentImage(selectedCandidate);
 
-      try {
-        showRecentSelectionPreview(pi, selectedImage, ctx.cwd);
-      } catch (error) {
+      void showRecentSelectionPreview(pi, selectedImage, ctx.cwd, logger).catch((error: unknown) => {
         ctx.ui.notify(`Could not render recent image preview: ${getErrorMessage(error)}`, "warning");
-      }
+      });
 
       queueImageAttachment(
         ctx,
