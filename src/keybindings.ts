@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { TUI_KEYBINDINGS, type KeyId, type KeybindingsConfig } from "@mariozechner/pi-tui";
+import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { TUI_KEYBINDINGS, type KeyId, type KeybindingsConfig } from "@earendil-works/pi-tui";
 
 import { isRecord, type ImageToolsConfig } from "./config.js";
 import type { DebugLogger } from "./debug-logger.js";

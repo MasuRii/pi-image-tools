@@ -1,4 +1,4 @@
-import { SettingsManager, getAgentDir } from "@mariozechner/pi-coding-agent";
+import { SettingsManager, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { resolve } from "node:path";
 
 import { isRecord } from "./config.js";

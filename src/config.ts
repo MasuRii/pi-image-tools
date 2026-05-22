@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { KeyId } from "@mariozechner/pi-tui";
+import type { KeyId } from "@earendil-works/pi-tui";
 
 const CONFIG_FILE_NAME = "config.json";
 const EXTENSION_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
