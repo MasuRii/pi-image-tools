@@ -255,8 +255,8 @@ When you queue one or more images, the extension renders an inline preview insid
 
 Preview behavior:
 - up to **3 images** are previewed per message
-- Sixel rendering is attempted on Windows when the PowerShell `Sixel` module is already installed
-- no PowerShell modules are installed automatically at runtime
+- Sixel rendering is attempted on Windows when the PowerShell `Sixel` module is already installed and on Linux when `img2sixel` is available on `PATH`
+- no PowerShell modules or Linux packages are installed automatically at runtime
 - native TUI image rendering is used as the fallback
 - image payloads over `PI_IMAGE_TOOLS_MAX_IMAGE_BYTES` are rejected before attachment, recent-cache writes, or Sixel conversion
 - inline width fitting now preserves Sixel, Kitty, and iTerm image protocol rows instead of truncating them like plain text
@@ -311,9 +311,14 @@ pi-image-tools/
 | Linux clipboard paste fails | Make sure you are in a graphical session and install `wl-clipboard` or `xclip` |
 | Recent picker is empty | Add directories via `PI_IMAGE_TOOLS_RECENT_DIRS` or paste images from clipboard first so they enter the recent cache |
 | `/paste-image recent` says it requires interactive mode | Run Pi in interactive TUI mode |
-| Sixel preview warning appears | On Windows, install the PowerShell `Sixel` module and restart Pi |
+| Sixel preview warning appears | On Linux, install `img2sixel` (for example from `libsixel-bin`); on Windows, install the PowerShell `Sixel` module and restart Pi |
 
-Manual Sixel installation:
+Manual Sixel installation examples:
+
+```bash
+# Debian/Ubuntu
+sudo apt install libsixel-bin
+```
 
 ```powershell
 Install-Module -Name Sixel -Scope CurrentUser -Force -AllowClobber

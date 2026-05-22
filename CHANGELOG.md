@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0] - 2026-05-22
+
+### Added
+- Added Linux Sixel previews through `img2sixel` detection and conversion when the converter is available on `PATH`.
+- Added asynchronous image preview conversion so user-message previews can fall back without blocking the TUI.
+
+### Changed
+- Updated Pi peer dependencies and runtime imports to the `@earendil-works` scope.
+- Improved preview setup diagnostics so missing Sixel converters report actionable fallback warnings.
+
+### Fixed
+- Hardened debug logging with redaction and asynchronous file writes while keeping logging disabled by default.
+
 ## [1.1.0] - 2026-05-03
 
 ### Added
