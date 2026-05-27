@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.1] - 2026-05-26
+
+### Changed
+- Widened `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` peer dependency ranges to `^0.74.0 || ^0.75.0`.
+
 ## [1.2.0] - 2026-05-22
 
 ### Added
