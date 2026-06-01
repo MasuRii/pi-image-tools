@@ -19,7 +19,7 @@
     "typecheck": "npx --yes -p typescript@5.7.3 tsc -p tsconfig.json --noEmit",
     "build": "npm run typecheck",
     "lint": "npm run typecheck",
-    "test": "node --test",
+    "test": "node --test test/*.test.js test/providers/*.test.js",
     "check": "npm run build && npm run test"
   },
   "keywords": [
@@ -60,10 +60,10 @@
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.74.0 || ^0.75.0",
-    "@earendil-works/pi-tui": "^0.74.0 || ^0.75.0"
+    "@earendil-works/pi-coding-agent": "^0.74.0 || ^0.75.0 || ^0.77.0 || ^0.78.0",
+    "@earendil-works/pi-tui": "^0.74.0 || ^0.75.0 || ^0.77.0 || ^0.78.0"
   },
   "optionalDependencies": {
-    "@mariozechner/clipboard": "^0.3.6"
+    "@mariozechner/clipboard": "^0.3.9"
   }
 }
