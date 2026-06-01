@@ -413,7 +413,7 @@ test("recent image attachment loads enforce the configured max image byte limit"
   }
 });
 
-test("inline user preview schedules session patches and annotates latest user message", async () => {
+test("inline user preview schedules session patches and adds preview below latest user message", async () => {
   const originalSetTimeout = globalThis.setTimeout;
   const interactivePrototype = InteractiveMode.prototype;
   const userMessagePrototype = UserMessageComponent.prototype;
@@ -462,9 +462,10 @@ test("inline user preview schedules session patches and annotates latest user me
     });
     await Promise.resolve();
     const child = mode.chatContainer.children[0];
+    const preview = mode.chatContainer.children[1];
     assert.equal(child instanceof UserMessageComponent, true);
-    assert.equal(child.__piImageToolsInlineItems.length, 1);
-    assert.ok(child.render(40).includes("↳ pasted image preview"));
+    assert.equal(mode.chatContainer.children.length, 2);
+    assert.ok(preview.render(40).includes("↳ pasted image preview"));
   } finally {
     globalThis.setTimeout = originalSetTimeout;
     interactivePrototype.addMessageToChat = originalAddMessageToChat;

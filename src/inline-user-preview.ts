@@ -12,17 +12,11 @@ import { buildPreviewItems, type ImagePayload, type ImagePreviewItem } from "./i
 import { buildSixelRenderLines, isInlineImageProtocolLine } from "./sixel-protocol.js";
 import { setActiveTerminalImageSettingsCwd } from "./terminal-image-width.js";
 
-type UserMessageRenderFn = (width: number) => string[];
-
-type UserMessagePrototype = {
-  render: UserMessageRenderFn;
-  __piImageToolsInlineOriginalRender?: UserMessageRenderFn;
-  __piImageToolsInlinePatched?: boolean;
-};
+const INLINE_PREVIEW_PATCH_VERSION = "pi-image-tools-inline-preview-chat-component-v4";
+const PREPARE_SUBMITTED_PREVIEW_TIMEOUT_MS = 2_500;
 
 type UserMessageInstance = {
-  __piImageToolsInlineAssigned?: boolean;
-  __piImageToolsInlineItems?: ImagePreviewItem[];
+  render?: (width: number) => string[];
 };
 
 type InteractiveModePrototype = {
@@ -31,6 +25,7 @@ type InteractiveModePrototype = {
   __piImageToolsOriginalAddMessageToChat?: (message: unknown, options?: unknown) => void;
   __piImageToolsOriginalGetUserMessageText?: (message: unknown) => string;
   __piImageToolsPreviewPatched?: boolean;
+  __piImageToolsPreviewPatchVersion?: string;
 };
 
 interface UserImageContent {
@@ -46,8 +41,22 @@ interface UserMessageLike {
 
 interface InteractiveModeLike {
   chatContainer?: {
+    addChild?: (component: unknown) => void;
     children?: unknown[];
   };
+  ui?: {
+    requestRender?: () => void;
+  };
+}
+
+class ImagePreviewChatComponent {
+  constructor(private readonly items: readonly ImagePreviewItem[]) {}
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    return renderPreviewLines(this.items, width);
+  }
 }
 
 function buildNativeLines(item: ImagePreviewItem, width: number): string[] {
@@ -137,18 +146,13 @@ function toImageContent(value: unknown): UserImageContent | null {
   };
 }
 
-function extractImagePayloads(message: unknown): ImagePayload[] {
-  const userMessage = toUserMessage(message);
-  if (userMessage.role !== "user") {
-    return [];
-  }
-
-  if (!Array.isArray(userMessage.content)) {
+function extractImagePayloadsFromContent(content: unknown): ImagePayload[] {
+  if (!Array.isArray(content)) {
     return [];
   }
 
   const payloads: ImagePayload[] = [];
-  for (const part of userMessage.content) {
+  for (const part of content) {
     const image = toImageContent(part);
     if (!image) {
       continue;
@@ -164,6 +168,109 @@ function extractImagePayloads(message: unknown): ImagePayload[] {
   return payloads;
 }
 
+function extractImagePayloads(message: unknown): ImagePayload[] {
+  const userMessage = toUserMessage(message);
+  if (userMessage.role !== "user") {
+    return [];
+  }
+
+  return extractImagePayloadsFromContent(userMessage.content);
+}
+
+function getImagePayloadSignature(images: readonly ImagePayload[]): string {
+  return images
+    .map((image) => `${image.mimeType}:${image.data.length}:${image.data.slice(0, 32)}:${image.data.slice(-32)}`)
+    .join("|");
+}
+
+interface PreparedPreviewItems {
+  signature: string;
+  items: ImagePreviewItem[];
+}
+
+const preparedPreviewItemsQueue: PreparedPreviewItems[] = [];
+const inFlightPreviewItems = new Map<string, Promise<ImagePreviewItem[]>>();
+
+function queuePreparedPreviewItems(images: readonly ImagePayload[], items: ImagePreviewItem[]): void {
+  if (images.length === 0 || items.length === 0) {
+    return;
+  }
+
+  preparedPreviewItemsQueue.push({
+    signature: getImagePayloadSignature(images),
+    items,
+  });
+
+  if (preparedPreviewItemsQueue.length > 8) {
+    preparedPreviewItemsQueue.splice(0, preparedPreviewItemsQueue.length - 8);
+  }
+}
+
+function consumePreparedPreviewItems(images: readonly ImagePayload[]): ImagePreviewItem[] | undefined {
+  if (images.length === 0 || preparedPreviewItemsQueue.length === 0) {
+    return undefined;
+  }
+
+  const signature = getImagePayloadSignature(images);
+  const index = preparedPreviewItemsQueue.findIndex((entry) => entry.signature === signature);
+  if (index === -1) {
+    return undefined;
+  }
+
+  const [entry] = preparedPreviewItemsQueue.splice(index, 1);
+  return entry?.items;
+}
+
+function getInFlightPreviewItems(images: readonly ImagePayload[]): Promise<ImagePreviewItem[]> | undefined {
+  if (images.length === 0) {
+    return undefined;
+  }
+
+  return inFlightPreviewItems.get(getImagePayloadSignature(images));
+}
+
+function buildPreviewItemsOnce(
+  images: readonly ImagePayload[],
+  options: { cwd?: string; logger?: DebugLogger } = {},
+): Promise<ImagePreviewItem[]> {
+  const signature = getImagePayloadSignature(images);
+  const existing = inFlightPreviewItems.get(signature);
+  if (existing) {
+    return existing;
+  }
+
+  const promise = buildPreviewItems(images, options);
+  promise.then(
+    () => inFlightPreviewItems.delete(signature),
+    () => inFlightPreviewItems.delete(signature),
+  );
+  promise.catch(() => {
+    // Consumers log contextual errors; this prevents unhandled rejections when prebuild times out.
+  });
+  inFlightPreviewItems.set(signature, promise);
+  return promise;
+}
+
+async function waitForPreviewItemsDeadline(
+  previewItemsPromise: Promise<ImagePreviewItem[]>,
+): Promise<ImagePreviewItem[] | undefined> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      previewItemsPromise,
+      new Promise<undefined>((resolve) => {
+        timeout = setTimeout(() => resolve(undefined), PREPARE_SUBMITTED_PREVIEW_TIMEOUT_MS);
+        timeout.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 function imagePlaceholderText(count: number): string {
   if (count <= 1) {
     return "[󰈟 1 image attached]";
@@ -172,68 +279,60 @@ function imagePlaceholderText(count: number): string {
   return `[󰈟 ${count} images attached]`;
 }
 
-function patchUserMessageRender(): void {
-  const prototype = (UserMessageComponent as unknown as { prototype: UserMessagePrototype }).prototype;
-  if (typeof prototype.render !== "function") {
-    return;
+function isUserMessageComponentLike(value: unknown): value is UserMessageInstance {
+  if (value instanceof UserMessageComponent) {
+    return true;
   }
 
-  if (!prototype.__piImageToolsInlineOriginalRender) {
-    prototype.__piImageToolsInlineOriginalRender = prototype.render;
+  if (!isRecord(value) || typeof value.render !== "function") {
+    return false;
   }
 
-  if (prototype.__piImageToolsInlinePatched) {
-    return;
-  }
+  const constructorName =
+    typeof value.constructor === "function" && typeof value.constructor.name === "string"
+      ? value.constructor.name
+      : undefined;
 
-  prototype.render = function renderWithInlineImagePreview(width: number): string[] {
-    const originalRender = prototype.__piImageToolsInlineOriginalRender;
-    if (!originalRender) {
-      return [];
-    }
-
-    const instance = this as unknown as UserMessageInstance;
-    if (!instance.__piImageToolsInlineAssigned) {
-      instance.__piImageToolsInlineAssigned = true;
-      if (!Array.isArray(instance.__piImageToolsInlineItems)) {
-        instance.__piImageToolsInlineItems = [];
-      }
-    }
-
-    const baseLines = originalRender.call(this, width);
-    const previewLines = renderPreviewLines(instance.__piImageToolsInlineItems ?? [], width);
-    if (previewLines.length === 0) {
-      return baseLines;
-    }
-
-    return [...baseLines, ...previewLines];
-  };
-
-  prototype.__piImageToolsInlinePatched = true;
+  return constructorName === "UserMessageComponent";
 }
 
-function assignPreviewItemsToLatestUserMessage(
+function requestInteractiveModeRender(mode: InteractiveModeLike): void {
+  try {
+    mode.ui?.requestRender?.();
+  } catch {
+    // Rendering will be retried by the next TUI update.
+  }
+}
+
+function addPreviewItemsAfterLatestUserMessage(
   mode: InteractiveModeLike,
   fromChildIndex: number,
   previewItems: ImagePreviewItem[],
-): void {
-  const children = mode.chatContainer?.children;
-  if (!Array.isArray(children) || children.length === 0) {
-    return;
+): boolean {
+  const chatContainer = mode.chatContainer;
+  const children = chatContainer?.children;
+  if (!Array.isArray(children) || children.length === 0 || previewItems.length === 0) {
+    return false;
   }
 
   const start = Math.max(0, fromChildIndex);
   for (let index = children.length - 1; index >= start; index -= 1) {
     const child = children[index];
-    if (!(child instanceof UserMessageComponent)) {
+    if (!isUserMessageComponentLike(child)) {
       continue;
     }
 
-    const instance = child as unknown as UserMessageInstance;
-    instance.__piImageToolsInlineItems = previewItems;
-    instance.__piImageToolsInlineAssigned = true;
-    return;
+    const previewComponent = new ImagePreviewChatComponent(previewItems);
+    const insertIndex = index + 1;
+    if (insertIndex >= children.length && typeof chatContainer?.addChild === "function") {
+      chatContainer.addChild(previewComponent);
+    } else {
+      children.splice(insertIndex, 0, previewComponent);
+    }
+    return true;
   }
+
+  return false;
 }
 
 function logInlinePreviewError(
@@ -262,7 +361,10 @@ function patchInteractiveMode(logger?: DebugLogger): void {
     prototype.__piImageToolsOriginalAddMessageToChat = prototype.addMessageToChat;
   }
 
-  if (prototype.__piImageToolsPreviewPatched) {
+  if (
+    prototype.__piImageToolsPreviewPatched &&
+    prototype.__piImageToolsPreviewPatchVersion === INLINE_PREVIEW_PATCH_VERSION
+  ) {
     return;
   }
 
@@ -299,13 +401,26 @@ function patchInteractiveMode(logger?: DebugLogger): void {
       return;
     }
 
-    void buildPreviewItems(imagePayloads, { logger })
+    const preparedPreviewItems = consumePreparedPreviewItems(imagePayloads);
+    if (preparedPreviewItems) {
+      if (addPreviewItemsAfterLatestUserMessage(mode, beforeCount, preparedPreviewItems)) {
+        requestInteractiveModeRender(mode);
+      }
+      return;
+    }
+
+    const previewItemsPromise = getInFlightPreviewItems(imagePayloads)
+      ?? buildPreviewItemsOnce(imagePayloads, { logger });
+
+    void previewItemsPromise
       .then((previewItems) => {
         if (previewItems.length === 0) {
           return;
         }
 
-        assignPreviewItemsToLatestUserMessage(mode, beforeCount, previewItems);
+        if (addPreviewItemsAfterLatestUserMessage(mode, beforeCount, previewItems)) {
+          requestInteractiveModeRender(mode);
+        }
       })
       .catch((error: unknown) => {
         logInlinePreviewError(logger, "inline-user-preview.build_preview_failed", error);
@@ -313,6 +428,7 @@ function patchInteractiveMode(logger?: DebugLogger): void {
   };
 
   prototype.__piImageToolsPreviewPatched = true;
+  prototype.__piImageToolsPreviewPatchVersion = INLINE_PREVIEW_PATCH_VERSION;
 }
 
 export interface RegisterInlineUserImagePreviewOptions {
@@ -323,15 +439,16 @@ export function registerInlineUserImagePreview(
   pi: ExtensionAPI,
   options: RegisterInlineUserImagePreviewOptions = {},
 ): void {
+  const applyPatch = (): void => {
+    try {
+      patchInteractiveMode(options.logger);
+    } catch (error) {
+      logInlinePreviewError(options.logger, "inline-user-preview.patch_failed", error);
+    }
+  };
+
   const runPatch = (delayMs: number): void => {
-    setTimeout(() => {
-      try {
-        patchInteractiveMode(options.logger);
-        patchUserMessageRender();
-      } catch (error) {
-        logInlinePreviewError(options.logger, "inline-user-preview.patch_failed", error);
-      }
-    }, delayMs);
+    setTimeout(applyPatch, delayMs);
   };
 
   const schedulePatch = (): void => {
@@ -342,18 +459,57 @@ export function registerInlineUserImagePreview(
   const handleSessionEvent = (eventName: string, cwd: string | undefined): void => {
     try {
       setActiveTerminalImageSettingsCwd(cwd);
+      applyPatch();
       schedulePatch();
     } catch (error) {
       logInlinePreviewError(options.logger, `inline-user-preview.${eventName}_failed`, error);
     }
   };
 
+  const prepareSubmittedImagePreview = async (
+    event: { images?: unknown },
+    cwd: string | undefined,
+  ): Promise<{ imagePayloads: ImagePayload[]; previewItems: ImagePreviewItem[] } | undefined> => {
+    try {
+      setActiveTerminalImageSettingsCwd(cwd);
+      applyPatch();
+      const imagePayloads = extractImagePayloadsFromContent(event.images);
+      if (imagePayloads.length === 0) {
+        return undefined;
+      }
+
+      const previewItemsPromise = buildPreviewItemsOnce(imagePayloads, { cwd, logger: options.logger });
+      const previewItems = await waitForPreviewItemsDeadline(previewItemsPromise);
+      if (!previewItems || previewItems.length === 0) {
+        return undefined;
+      }
+
+      return { imagePayloads, previewItems };
+    } catch (error) {
+      logInlinePreviewError(options.logger, "inline-user-preview.prepare_submitted_preview_failed", error);
+      return undefined;
+    }
+  };
+
+  applyPatch();
+
   pi.on("session_start", async (_event, ctx) => {
     handleSessionEvent("session_start", ctx.cwd);
   });
 
-  pi.on("before_agent_start", async (_event, ctx) => {
+  pi.on("before_agent_start", async (event, ctx) => {
     handleSessionEvent("before_agent_start", ctx.cwd);
+    if (!ctx.hasUI) {
+      return undefined;
+    }
+
+    const preparedPreview = await prepareSubmittedImagePreview(event, ctx.cwd);
+    if (!preparedPreview) {
+      return undefined;
+    }
+
+    queuePreparedPreviewItems(preparedPreview.imagePayloads, preparedPreview.previewItems);
+    return undefined;
   });
 
   const onSessionSwitch = pi.on as unknown as (
