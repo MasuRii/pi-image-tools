@@ -1,33 +1,88 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { readClipboardImage } from "./clipboard.js";
 import { registerPasteImageCommand } from "./commands.js";
 import { loadImageToolsConfig } from "./config.js";
 import { DebugLogger } from "./debug-logger.js";
 import { getErrorMessage } from "./errors.js";
 import { assertImageWithinByteLimit } from "./image-size.js";
-import {
-  IMAGE_PREVIEW_CUSTOM_TYPE,
-  buildPreviewItems,
-  registerImagePreviewDisplay,
-  type ImagePayload,
-} from "./image-preview.js";
-import { registerInlineUserImagePreview } from "./inline-user-preview.js";
 import { registerImagePasteKeybindings } from "./keybindings.js";
-import {
-  RECENT_IMAGE_CACHE_DIR_ENV_VAR,
-  RECENT_IMAGE_ENV_VAR,
-  discoverRecentImages,
-  formatRecentImageLabel,
-  getRecentImageCacheDirectory,
-  loadRecentImage,
-  persistImageToRecentCache,
-} from "./recent-images.js";
 import type { ClipboardImage, PasteContext } from "./types.js";
 
 const IMAGE_ATTACHMENT_INDICATOR = "[󰈟 Image Attached]";
+const IMAGE_PREVIEW_CUSTOM_TYPE = "pi-image-tools-preview";
+const RECENT_IMAGE_ENV_VAR = "PI_IMAGE_TOOLS_RECENT_DIRS";
+const RECENT_IMAGE_CACHE_DIR_ENV_VAR = "PI_IMAGE_TOOLS_RECENT_CACHE_DIR";
+
+type ImagePayload = {
+  type: "image";
+  data: string;
+  mimeType: string;
+};
 
 interface PendingImage extends ImagePayload {}
+
+type ClipboardModule = typeof import("./clipboard.js");
+type ImagePreviewModule = typeof import("./image-preview.js");
+type InlineUserPreviewModule = typeof import("./inline-user-preview.js");
+type RecentImagesModule = typeof import("./recent-images.js");
+
+let clipboardModulePromise: Promise<ClipboardModule> | undefined;
+let imagePreviewModulePromise: Promise<ImagePreviewModule> | undefined;
+let inlineUserPreviewModulePromise: Promise<InlineUserPreviewModule> | undefined;
+let recentImagesModulePromise: Promise<RecentImagesModule> | undefined;
+const imagePreviewDisplayRegistrations = new WeakSet<ExtensionAPI>();
+const inlineUserPreviewRegistrations = new WeakSet<ExtensionAPI>();
+const previewRegistrationPromises = new WeakMap<ExtensionAPI, Promise<void>>();
+
+function loadClipboardModule(): Promise<ClipboardModule> {
+  clipboardModulePromise ??= import("./clipboard.js");
+  return clipboardModulePromise;
+}
+
+function loadImagePreviewModule(): Promise<ImagePreviewModule> {
+  imagePreviewModulePromise ??= import("./image-preview.js");
+  return imagePreviewModulePromise;
+}
+
+function loadInlineUserPreviewModule(): Promise<InlineUserPreviewModule> {
+  inlineUserPreviewModulePromise ??= import("./inline-user-preview.js");
+  return inlineUserPreviewModulePromise;
+}
+
+function loadRecentImagesModule(): Promise<RecentImagesModule> {
+  recentImagesModulePromise ??= import("./recent-images.js");
+  return recentImagesModulePromise;
+}
+
+async function ensureImagePreviewDisplayRegistered(
+  pi: ExtensionAPI,
+  logger: DebugLogger,
+): Promise<ImagePreviewModule> {
+  const module = await loadImagePreviewModule();
+  if (!imagePreviewDisplayRegistrations.has(pi)) {
+    imagePreviewDisplayRegistrations.add(pi);
+    module.registerImagePreviewDisplay(pi, { logger });
+  }
+  return module;
+}
+
+async function ensurePreviewRegistrations(pi: ExtensionAPI, logger: DebugLogger): Promise<void> {
+  let registrationPromise = previewRegistrationPromises.get(pi);
+  if (!registrationPromise) {
+    registrationPromise = (async () => {
+      await ensureImagePreviewDisplayRegistered(pi, logger);
+
+      if (!inlineUserPreviewRegistrations.has(pi)) {
+        const module = await loadInlineUserPreviewModule();
+        inlineUserPreviewRegistrations.add(pi);
+        module.registerInlineUserImagePreview(pi, { logger });
+      }
+    })();
+    previewRegistrationPromises.set(pi, registrationPromise);
+  }
+
+  await registrationPromise;
+}
 
 function imageToBase64(image: ClipboardImage): string {
   assertImageWithinByteLimit(image.bytes.length, "Image attachment");
@@ -59,6 +114,20 @@ function removeAttachmentIndicators(text: string): string {
   return withoutMarkers.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+async function cacheImageForRecentPicker(ctx: PasteContext, image: ClipboardImage): Promise<void> {
+  try {
+    const { persistImageToRecentCache } = await loadRecentImagesModule();
+    persistImageToRecentCache(image);
+  } catch (error) {
+    if (ctx.hasUI) {
+      ctx.ui.notify(
+        `Image attached, but failed to cache for /paste-image recent: ${getErrorMessage(error)}`,
+        "warning",
+      );
+    }
+  }
+}
+
 function queueImageAttachment(
   ctx: PasteContext,
   pendingImages: PendingImage[],
@@ -73,16 +142,7 @@ function queueImageAttachment(
   });
 
   if (options.cacheForRecentPicker) {
-    try {
-      persistImageToRecentCache(image);
-    } catch (error) {
-      if (ctx.hasUI) {
-        ctx.ui.notify(
-          `Image attached, but failed to cache for /paste-image recent: ${getErrorMessage(error)}`,
-          "warning",
-        );
-      }
-    }
+    void cacheImageForRecentPicker(ctx, image);
   }
 
   if (!ctx.hasUI) {
@@ -93,12 +153,14 @@ function queueImageAttachment(
   ctx.ui.notify(successMessage, "info");
 }
 
-function buildRecentImageEmptyStateMessage(searchedDirectories: readonly string[]): string {
+function buildRecentImageEmptyStateMessage(
+  searchedDirectories: readonly string[],
+  cacheDirectory: string,
+): string {
   const searched =
     searchedDirectories.length > 0
       ? searchedDirectories.join("; ")
       : "No directories configured";
-  const cacheDirectory = getRecentImageCacheDirectory();
 
   return [
     `No recent images found. Searched: ${searched}`,
@@ -114,6 +176,7 @@ async function showRecentSelectionPreview(
   cwd: string,
   logger: DebugLogger,
 ): Promise<void> {
+  const { buildPreviewItems } = await ensureImagePreviewDisplayRegistered(pi, logger);
   const previewItems = await buildPreviewItems(
     [
       {
@@ -151,8 +214,15 @@ export default function imageToolsExtension(pi: ExtensionAPI): void {
     pasteImageShortcutsConfigured: config.shortcuts.pasteImage !== undefined,
   });
 
-  registerInlineUserImagePreview(pi, { logger });
-  registerImagePreviewDisplay(pi, { logger });
+  pi.on("session_start", async (_event, ctx) => {
+    try {
+      const { setActiveTerminalImageSettingsCwd } = await import("./terminal-image-width.js");
+      setActiveTerminalImageSettingsCwd(ctx.cwd);
+      await ensurePreviewRegistrations(pi, logger);
+    } catch (error) {
+      logger.log("preview.lazy_registration_failed", { error: getErrorMessage(error) });
+    }
+  });
 
   const pasteImageFromClipboard = async (ctx: PasteContext): Promise<void> => {
     if (!ctx.hasUI) {
@@ -160,6 +230,7 @@ export default function imageToolsExtension(pi: ExtensionAPI): void {
     }
 
     try {
+      const { readClipboardImage } = await loadClipboardModule();
       const image = await readClipboardImage();
       if (!image) {
         ctx.ui.notify("No image found in clipboard.", "warning");
@@ -185,9 +256,21 @@ export default function imageToolsExtension(pi: ExtensionAPI): void {
     }
 
     try {
+      const {
+        discoverRecentImages,
+        formatRecentImageLabel,
+        getRecentImageCacheDirectory,
+        loadRecentImage,
+      } = await loadRecentImagesModule();
       const discovery = discoverRecentImages();
       if (discovery.candidates.length === 0) {
-        ctx.ui.notify(buildRecentImageEmptyStateMessage(discovery.searchedDirectories), "warning");
+        ctx.ui.notify(
+          buildRecentImageEmptyStateMessage(
+            discovery.searchedDirectories,
+            getRecentImageCacheDirectory(),
+          ),
+          "warning",
+        );
         return;
       }
 
