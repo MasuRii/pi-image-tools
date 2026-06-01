@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -53,7 +52,7 @@ function compileTestModules() {
 
 compileTestModules();
 
-const { transcodeToSupportedFormat, SUPPORTED_IMAGE_MIME_TYPES } = await import(
+const { transcodeToSupportedFormat, MODEL_PROVIDER_IMAGE_MIME_TYPES } = await import(
   pathToFileURL(join(TEST_DIST_DIR, "src", "image-transcode.js")).href
 );
 
@@ -76,6 +75,27 @@ test("transcodeToSupportedFormat returns supported MIME types unchanged", () => 
   assert.equal(calls.length, 0);
 });
 
+test("transcodeToSupportedFormat canonicalizes parameterized supported MIME types without re-encoding", () => {
+  const { runner, calls } = makeRunner(() => {
+    throw new Error("should not be called");
+  });
+  const image = { bytes: new Uint8Array(PNG_BYTES), mimeType: "IMAGE/PNG; charset=binary" };
+  const result = transcodeToSupportedFormat(image, { runner });
+  assert.equal(result.mimeType, "image/png");
+  assert.equal(result.bytes, image.bytes, "bytes should be reused, not re-encoded");
+  assert.equal(calls.length, 0);
+});
+
+test("transcodeToSupportedFormat upgrades the image/jpg alias to image/jpeg without re-encoding", () => {
+  const { runner, calls } = makeRunner(() => {
+    throw new Error("should not be called");
+  });
+  const image = { bytes: new Uint8Array([0xff, 0xd8, 0xff]), mimeType: "image/jpg" };
+  const result = transcodeToSupportedFormat(image, { runner });
+  assert.equal(result.mimeType, "image/jpeg");
+  assert.equal(calls.length, 0);
+});
+
 test("transcodeToSupportedFormat invokes ImageMagick to convert image/bmp to image/png", () => {
   const { runner, calls } = makeRunner(() => ({
     status: 0,
@@ -93,6 +113,22 @@ test("transcodeToSupportedFormat invokes ImageMagick to convert image/bmp to ima
   assert.equal(calls[0].command, "magick");
   assert.deepEqual(calls[0].args, ["bmp:-", "png:-"]);
   assert.equal(calls[0].inputLength, BMP_BYTES.length);
+});
+
+test("transcodeToSupportedFormat normalizes the source MIME before deriving the ImageMagick input format", () => {
+  const { runner, calls } = makeRunner(() => ({
+    status: 0,
+    stdout: PNG_BYTES,
+    stderr: Buffer.alloc(0),
+    pid: 0,
+    output: [],
+    signal: null,
+  }));
+  transcodeToSupportedFormat(
+    { bytes: new Uint8Array(BMP_BYTES), mimeType: "IMAGE/BMP; charset=binary" },
+    { runner },
+  );
+  assert.deepEqual(calls[0].args, ["bmp:-", "png:-"]);
 });
 
 test("transcodeToSupportedFormat falls back to `convert` when `magick` is missing", () => {
@@ -137,12 +173,15 @@ test("transcodeToSupportedFormat throws when ImageMagick exits non-zero", () => 
   );
 });
 
-test("SUPPORTED_IMAGE_MIME_TYPES matches the formats accepted by major model providers", () => {
-  for (const mime of ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"]) {
-    assert.ok(SUPPORTED_IMAGE_MIME_TYPES.has(mime), `expected ${mime} to be supported`);
+test("MODEL_PROVIDER_IMAGE_MIME_TYPES matches the formats accepted by major model providers", () => {
+  for (const mime of ["image/png", "image/jpeg", "image/gif", "image/webp"]) {
+    assert.ok(MODEL_PROVIDER_IMAGE_MIME_TYPES.has(mime), `expected ${mime} to be supported`);
   }
-  assert.ok(!SUPPORTED_IMAGE_MIME_TYPES.has("image/bmp"));
-  assert.ok(!SUPPORTED_IMAGE_MIME_TYPES.has("image/tiff"));
+  // image/jpg is intentionally not in the set; it is canonicalized to image/jpeg
+  // before lookup so downstream consumers always see the IANA-canonical spelling.
+  assert.ok(!MODEL_PROVIDER_IMAGE_MIME_TYPES.has("image/jpg"));
+  assert.ok(!MODEL_PROVIDER_IMAGE_MIME_TYPES.has("image/bmp"));
+  assert.ok(!MODEL_PROVIDER_IMAGE_MIME_TYPES.has("image/tiff"));
 });
 
 rmSync(TEST_DIST_DIR, { recursive: true, force: true });
