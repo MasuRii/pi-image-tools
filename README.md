@@ -25,10 +25,8 @@ Image attachment and preview extension for the **Pi coding agent**.
 |----------|-----------------|---------------------|-------|
 | Windows | Yes | Yes | Uses native clipboard module first, then PowerShell fallback |
 | Linux | Yes | Yes | Requires a graphical session; uses `wl-paste` or `xclip`, then native module fallback |
-| macOS | Yes* | Yes | Clipboard paste depends on `@mariozechner/clipboard` being available |
+| macOS | Yes | Yes | Uses `pngpaste` first, then `osascript` and native module fallbacks |
 | Termux / headless Linux | No | Limited | Clipboard image paste is disabled without a graphical session |
-
-\* macOS clipboard image support relies on the optional native clipboard module.
 
 ## Installation
 
@@ -273,7 +271,9 @@ Preview behavior:
   - `xclip` in X11 sessions
   - `@mariozechner/clipboard` fallback
 - **macOS**
-  - `@mariozechner/clipboard`
+  - `pngpaste`
+  - `osascript` PNG clipboard readers
+  - `@mariozechner/clipboard` fallback
 
 If a platform-specific reader exists but no image is currently on the clipboard, the command returns a normal “No image found in clipboard” message. If no usable reader exists at all, the extension surfaces a setup-oriented error.
 
