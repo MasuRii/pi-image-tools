@@ -65,6 +65,20 @@ function createTempRoot() {
   };
 }
 
+function withAgentDir(agentDir, callback) {
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  try {
+    return callback();
+  } finally {
+    if (previousAgentDir === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    }
+  }
+}
+
 function commandResult({ ok = true, stdout = Buffer.alloc(0), missingCommand = false, status } = {}) {
   return {
     ok,
@@ -518,7 +532,7 @@ test("loadImageToolsConfig returns defaults when file missing", () => {
   try {
     const configPath = join(fixture.root, "nonexistent.json");
     const cfg = loadImageToolsConfig(configPath, { platform: "darwin" });
-    assert.equal(cfg.shortcuts.avoidBuiltinConflicts, false);
+    assert.equal(cfg.shortcuts.avoidBuiltinConflicts, true);
     assert.deepEqual(cfg.shortcuts.pasteImage, undefined);
   } finally {
     fixture.cleanup();
@@ -560,6 +574,27 @@ test("linux candidates include ctrl+v when conflicts disabled", () => {
   const config = { debug: false, shortcuts: { avoidBuiltinConflicts: false } };
   const shortcuts = getImagePasteShortcuts(config, "linux");
   assert.ok(shortcuts.includes("ctrl+v"));
+});
+
+test("default shortcuts restore primary paste shortcut when Pi's built-in binding is disabled", () => {
+  const fixture = createTempRoot();
+  const configPath = join(fixture.root, "config.json");
+  const keybindingsPath = join(fixture.root, "keybindings.json");
+
+  try {
+    writeJson(configPath, { debug: false });
+    writeJson(keybindingsPath, { "app.clipboard.pasteImage": [] });
+
+    withAgentDir(fixture.root, () => {
+      const macConfig = loadImageToolsConfig(configPath, { platform: "darwin" });
+      const windowsConfig = loadImageToolsConfig(configPath, { platform: "win32" });
+
+      assert.deepEqual(getImagePasteShortcuts(macConfig, "darwin"), ["ctrl+v", "alt+v", "ctrl+alt+v"]);
+      assert.deepEqual(getImagePasteShortcuts(windowsConfig, "win32"), ["alt+v", "ctrl+alt+v"]);
+    });
+  } finally {
+    fixture.cleanup();
+  }
 });
 
 test("normalizeShortcut trims whitespace", () => {
@@ -743,22 +778,26 @@ test("shell environment detects tmux and only wraps darwin commands when helper 
   assert.deepEqual(missingHelper, { command: "osascript", args: ["-e", "return 1"], wrapped: false });
 });
 
-test("config defaults route macOS paste through pi-image-tools without changing linux/windows conflict defaults", () => {
+test("default shortcuts avoid built-in conflicts on all platforms", () => {
   const fixture = createTempRoot();
   const configPath = join(fixture.root, "config.json");
 
   try {
     writeJson(configPath, { debug: false, shortcuts: {}, clipboard: { unknownFutureField: true } });
 
-    const macConfig = loadImageToolsConfig(configPath, { platform: "darwin" });
-    const linuxConfig = loadImageToolsConfig(configPath, { platform: "linux" });
-    const windowsConfig = loadImageToolsConfig(configPath, { platform: "win32" });
+    withAgentDir(fixture.root, () => {
+      const macConfig = loadImageToolsConfig(configPath, { platform: "darwin" });
+      const linuxConfig = loadImageToolsConfig(configPath, { platform: "linux" });
+      const windowsConfig = loadImageToolsConfig(configPath, { platform: "win32" });
 
-    assert.equal(macConfig.shortcuts.avoidBuiltinConflicts, false);
-    assert.equal(linuxConfig.shortcuts.avoidBuiltinConflicts, true);
-    assert.equal(windowsConfig.shortcuts.avoidBuiltinConflicts, true);
-    assert.equal(macConfig.shortcuts.suppressBuiltinConflictWarnings, false);
-    assert.ok(getImagePasteShortcuts(macConfig, "darwin").includes("ctrl+v"));
+      assert.equal(macConfig.shortcuts.avoidBuiltinConflicts, true);
+      assert.equal(linuxConfig.shortcuts.avoidBuiltinConflicts, true);
+      assert.equal(windowsConfig.shortcuts.avoidBuiltinConflicts, true);
+      assert.equal(macConfig.shortcuts.suppressBuiltinConflictWarnings, false);
+      assert.deepEqual(getImagePasteShortcuts(macConfig, "darwin"), ["alt+v", "ctrl+alt+v"]);
+      assert.deepEqual(getImagePasteShortcuts(linuxConfig, "linux"), ["alt+v", "ctrl+alt+v"]);
+      assert.deepEqual(getImagePasteShortcuts(windowsConfig, "win32"), ["ctrl+alt+v"]);
+    });
   } finally {
     fixture.cleanup();
   }

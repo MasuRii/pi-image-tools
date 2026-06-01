@@ -72,49 +72,51 @@ const LEGACY_KEYBINDING_NAME_MIGRATIONS: Record<string, string> = {
   deleteSessionNoninvasive: "app.session.deleteNoninvasive",
 };
 
-const APP_KEYBINDING_DEFAULTS: KeybindingDefaults = {
-  "app.interrupt": "escape",
-  "app.clear": "ctrl+c",
-  "app.exit": "ctrl+d",
-  "app.suspend": process.platform === "win32" ? [] : "ctrl+z",
-  "app.thinking.cycle": "shift+tab",
-  "app.model.cycleForward": "ctrl+p",
-  "app.model.cycleBackward": "shift+ctrl+p",
-  "app.model.select": "ctrl+l",
-  "app.tools.expand": "ctrl+o",
-  "app.thinking.toggle": "ctrl+t",
-  "app.session.toggleNamedFilter": "ctrl+n",
-  "app.editor.external": "ctrl+g",
-  "app.message.followUp": "alt+enter",
-  "app.message.dequeue": "alt+up",
-  "app.clipboard.pasteImage": process.platform === "win32" ? "alt+v" : "ctrl+v",
-  "app.session.new": [],
-  "app.session.tree": [],
-  "app.session.fork": [],
-  "app.session.resume": [],
-  "app.tree.foldOrUp": ["ctrl+left", "alt+left"],
-  "app.tree.unfoldOrDown": ["ctrl+right", "alt+right"],
-  "app.tree.editLabel": "shift+l",
-  "app.tree.toggleLabelTimestamp": "shift+t",
-  "app.session.togglePath": "ctrl+p",
-  "app.session.toggleSort": "ctrl+s",
-  "app.session.rename": "ctrl+r",
-  "app.session.delete": "ctrl+d",
-  "app.session.deleteNoninvasive": "ctrl+backspace",
-  "app.models.save": "ctrl+s",
-  "app.models.enableAll": "ctrl+a",
-  "app.models.clearAll": "ctrl+x",
-  "app.models.toggleProvider": "ctrl+p",
-  "app.models.reorderUp": "alt+up",
-  "app.models.reorderDown": "alt+down",
-  "app.tree.filter.default": "ctrl+d",
-  "app.tree.filter.noTools": "ctrl+t",
-  "app.tree.filter.userOnly": "ctrl+u",
-  "app.tree.filter.labeledOnly": "ctrl+l",
-  "app.tree.filter.all": "ctrl+a",
-  "app.tree.filter.cycleForward": "ctrl+o",
-  "app.tree.filter.cycleBackward": "shift+ctrl+o",
-};
+function getAppKeybindingDefaults(platform: NodeJS.Platform): KeybindingDefaults {
+  return {
+    "app.interrupt": "escape",
+    "app.clear": "ctrl+c",
+    "app.exit": "ctrl+d",
+    "app.suspend": platform === "win32" ? [] : "ctrl+z",
+    "app.thinking.cycle": "shift+tab",
+    "app.model.cycleForward": "ctrl+p",
+    "app.model.cycleBackward": "shift+ctrl+p",
+    "app.model.select": "ctrl+l",
+    "app.tools.expand": "ctrl+o",
+    "app.thinking.toggle": "ctrl+t",
+    "app.session.toggleNamedFilter": "ctrl+n",
+    "app.editor.external": "ctrl+g",
+    "app.message.followUp": "alt+enter",
+    "app.message.dequeue": "alt+up",
+    "app.clipboard.pasteImage": platform === "win32" ? "alt+v" : "ctrl+v",
+    "app.session.new": [],
+    "app.session.tree": [],
+    "app.session.fork": [],
+    "app.session.resume": [],
+    "app.tree.foldOrUp": ["ctrl+left", "alt+left"],
+    "app.tree.unfoldOrDown": ["ctrl+right", "alt+right"],
+    "app.tree.editLabel": "shift+l",
+    "app.tree.toggleLabelTimestamp": "shift+t",
+    "app.session.togglePath": "ctrl+p",
+    "app.session.toggleSort": "ctrl+s",
+    "app.session.rename": "ctrl+r",
+    "app.session.delete": "ctrl+d",
+    "app.session.deleteNoninvasive": "ctrl+backspace",
+    "app.models.save": "ctrl+s",
+    "app.models.enableAll": "ctrl+a",
+    "app.models.clearAll": "ctrl+x",
+    "app.models.toggleProvider": "ctrl+p",
+    "app.models.reorderUp": "alt+up",
+    "app.models.reorderDown": "alt+down",
+    "app.tree.filter.default": "ctrl+d",
+    "app.tree.filter.noTools": "ctrl+t",
+    "app.tree.filter.userOnly": "ctrl+u",
+    "app.tree.filter.labeledOnly": "ctrl+l",
+    "app.tree.filter.all": "ctrl+a",
+    "app.tree.filter.cycleForward": "ctrl+o",
+    "app.tree.filter.cycleBackward": "shift+ctrl+o",
+  };
+}
 
 export interface RegisterImagePasteKeybindingsOptions {
   config: ImageToolsConfig;
@@ -186,7 +188,7 @@ function normalizeUserKeybindings(rawConfig: Record<string, unknown> | undefined
   return userKeybindings;
 }
 
-function getBuiltinKeybindingDefaults(): KeybindingDefaults {
+function getBuiltinKeybindingDefaults(platform: NodeJS.Platform): KeybindingDefaults {
   const tuiDefaults: KeybindingDefaults = {};
   for (const [keybinding, definition] of Object.entries(TUI_KEYBINDINGS)) {
     tuiDefaults[keybinding] = definition.defaultKeys;
@@ -194,12 +196,12 @@ function getBuiltinKeybindingDefaults(): KeybindingDefaults {
 
   return {
     ...tuiDefaults,
-    ...APP_KEYBINDING_DEFAULTS,
+    ...getAppKeybindingDefaults(platform),
   };
 }
 
-function getConfiguredBuiltinShortcuts(): Set<string> {
-  const defaults = getBuiltinKeybindingDefaults();
+function getConfiguredBuiltinShortcuts(platform: NodeJS.Platform): Set<string> {
+  const defaults = getBuiltinKeybindingDefaults(platform);
   const userKeybindings = normalizeUserKeybindings(readKeybindingsConfig());
   const builtinShortcuts = new Set<string>();
 
@@ -224,8 +226,8 @@ function getImagePasteShortcutCandidates(platform: NodeJS.Platform): KeyId[] {
   return ["ctrl+v", "alt+v", "ctrl+alt+v"];
 }
 
-function removeBuiltinConflicts(shortcuts: readonly KeyId[]): KeyId[] {
-  const builtinShortcuts = getConfiguredBuiltinShortcuts();
+function removeBuiltinConflicts(shortcuts: readonly KeyId[], platform: NodeJS.Platform): KeyId[] {
+  const builtinShortcuts = getConfiguredBuiltinShortcuts(platform);
 
   return shortcuts.filter((shortcut) => !builtinShortcuts.has(normalizeShortcutKey(shortcut)));
 }
@@ -238,7 +240,7 @@ export function getImagePasteShortcuts(
     config.shortcuts.avoidBuiltinConflicts || config.shortcuts.suppressBuiltinConflictWarnings;
   const candidates = config.shortcuts.pasteImage ?? getImagePasteShortcutCandidates(platform);
 
-  return shouldAvoidBuiltinConflicts ? removeBuiltinConflicts(candidates) : [...candidates];
+  return shouldAvoidBuiltinConflicts ? removeBuiltinConflicts(candidates, platform) : [...candidates];
 }
 
 export function registerImagePasteKeybindings(

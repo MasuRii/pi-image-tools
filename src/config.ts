@@ -86,9 +86,9 @@ function parseShortcutList(value: unknown, property: string, path: string): KeyI
   return shortcuts;
 }
 
-function getDefaultShortcutConfig(platform: NodeJS.Platform): ImageToolsShortcutConfig {
+function getDefaultShortcutConfig(_platform: NodeJS.Platform): ImageToolsShortcutConfig {
   return {
-    avoidBuiltinConflicts: platform !== "darwin",
+    avoidBuiltinConflicts: true,
     suppressBuiltinConflictWarnings: false,
   };
 }

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Default paste-image shortcuts now avoid Pi built-in shortcut conflicts on macOS as well as Linux and Windows, preventing fresh macOS installs from overriding Pi's built-in `ctrl+v` image paste binding or printing startup conflict warnings.
 - Transcode clipboard images that arrive in MIME types model providers reject (most notably `image/bmp` from WSLg's Wayland clipboard bridge for Windows clipboard images, and `image/tiff` from some macOS sources) into PNG via ImageMagick before attaching them. Previously, pasting a Windows screenshot inside WSL produced an `Unknown image type: image/bmp` error from the model provider that blocked the message from being sent.
 
 ## [1.3.0] - 2026-06-01

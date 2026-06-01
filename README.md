@@ -123,12 +123,14 @@ $env:PI_IMAGE_TOOLS_RECENT_DIRS = "C:\Users\me\Pictures\Screenshots;D:\Shares\Sc
 
 ### Runtime config
 
-A config file can be placed at:
+A config file can be placed at the `pi-image-tools` package/install root next to `index.ts`. For npm-installed extensions this is the package directory under Pi's npm install area, for example:
 
 ```text
-Default global path: ~/.pi/agent/extensions/pi-image-tools/config.json
-Actual global path: $PI_CODING_AGENT_DIR/extensions/pi-image-tools/config.json when PI_CODING_AGENT_DIR is set
+~/.pi/agent/npm/node_modules/pi-image-tools/config.json
+$PI_CODING_AGENT_DIR/npm/node_modules/pi-image-tools/config.json when PI_CODING_AGENT_DIR is set
 ```
+
+For a local checkout or extension path, place `config.json` in that `pi-image-tools` directory.
 
 Starter template:
 
