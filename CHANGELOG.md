@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0] - 2026-06-01
+
+### Added
+- Added a provider registry for platform-specific clipboard readers.
+- Added macOS `pngpaste` and `osascript` clipboard fallbacks.
+- Added an inline preview queue and chat component for user image previews.
+
+### Changed
+- Deferred preview, clipboard, and recent-image module loading from the extension entrypoint.
+- Made shortcut conflict defaults platform-aware.
+- Updated Pi peer dependency ranges and the optional clipboard dependency for 0.78-compatible runtimes.
+
+### Fixed
+- Improved shell and session handling for clipboard command providers.
+
 ## [1.2.1] - 2026-05-26
 
 ### Changed
