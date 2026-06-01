@@ -25,6 +25,7 @@ Image attachment and preview extension for the **Pi coding agent**.
 |----------|-----------------|---------------------|-------|
 | Windows | Yes | Yes | Uses native clipboard module first, then PowerShell fallback |
 | Linux | Yes | Yes | Requires a graphical session; uses `wl-paste` or `xclip`, then native module fallback |
+| WSL2 (WSLg) | Yes | Yes | Linux providers see Windows clipboard images as `image/bmp`; install ImageMagick (`magick`/`convert`) so they can be transcoded to PNG before attaching |
 | macOS | Yes | Yes | Uses `pngpaste` first, then `osascript` and native module fallbacks |
 | Termux / headless Linux | No | Limited | Clipboard image paste is disabled without a graphical session |
 

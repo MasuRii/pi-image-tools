@@ -165,6 +165,54 @@ test("readClipboardImage throws when no providers are available", async () => {
   );
 });
 
+test("readClipboardImage transcodes unsupported MIME types using the injected runner", async () => {
+  const PNG_HEADER = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const BMP_BODY = Buffer.from([0x42, 0x4d, 0x01, 0x02]);
+  const registry = new ClipboardProviderRegistry([
+    createMockProvider({
+      id: "bmp-source",
+      priority: 10,
+      result: { available: true, image: { bytes: new Uint8Array(BMP_BODY), mimeType: "image/bmp" } },
+    }),
+  ]);
+  const calls = [];
+  const runner = (command, args, input) => {
+    calls.push({ command, args: [...args], inputLength: input.length });
+    return { status: 0, stdout: PNG_HEADER, stderr: Buffer.alloc(0), pid: 0, output: [], signal: null };
+  };
+  const result = await readClipboardImage({
+    platform: "linux",
+    environment: { DISPLAY: ":0" },
+    registry,
+    transcode: { runner },
+  });
+  assert.equal(result.mimeType, "image/png");
+  assert.deepEqual(Buffer.from(result.bytes), PNG_HEADER);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].args, ["bmp:-", "png:-"]);
+});
+
+test("readClipboardImage leaves already-supported formats untouched", async () => {
+  const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  const registry = new ClipboardProviderRegistry([
+    createMockProvider({
+      id: "png-source",
+      priority: 10,
+      result: { available: true, image: { bytes: new Uint8Array(PNG_BYTES), mimeType: "image/png" } },
+    }),
+  ]);
+  const runner = () => {
+    throw new Error("transcoder must not be invoked for supported formats");
+  };
+  const result = await readClipboardImage({
+    platform: "linux",
+    environment: { DISPLAY: ":0" },
+    registry,
+    transcode: { runner },
+  });
+  assert.equal(result.mimeType, "image/png");
+});
+
 test("buildDefaultClipboardProviderRegistry produces correct Windows provider order", () => {
   const registry = buildDefaultClipboardProviderRegistry("win32", {});
   const ids = registry.getProviders("win32").map((p) => p.capabilities.id);
