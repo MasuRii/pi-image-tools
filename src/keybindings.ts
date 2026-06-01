@@ -230,20 +230,15 @@ function removeBuiltinConflicts(shortcuts: readonly KeyId[]): KeyId[] {
   return shortcuts.filter((shortcut) => !builtinShortcuts.has(normalizeShortcutKey(shortcut)));
 }
 
-function getImagePasteShortcuts(
+export function getImagePasteShortcuts(
   config: ImageToolsConfig,
   platform: NodeJS.Platform = process.platform,
 ): KeyId[] {
   const shouldAvoidBuiltinConflicts =
     config.shortcuts.avoidBuiltinConflicts || config.shortcuts.suppressBuiltinConflictWarnings;
+  const candidates = config.shortcuts.pasteImage ?? getImagePasteShortcutCandidates(platform);
 
-  if (config.shortcuts.pasteImage !== undefined) {
-    return shouldAvoidBuiltinConflicts
-      ? removeBuiltinConflicts(config.shortcuts.pasteImage)
-      : config.shortcuts.pasteImage;
-  }
-
-  return removeBuiltinConflicts(getImagePasteShortcutCandidates(platform));
+  return shouldAvoidBuiltinConflicts ? removeBuiltinConflicts(candidates) : [...candidates];
 }
 
 export function registerImagePasteKeybindings(
@@ -251,16 +246,20 @@ export function registerImagePasteKeybindings(
   handler: PasteImageHandler,
   options: RegisterImagePasteKeybindingsOptions,
 ): void {
+  const platform = process.platform;
   const configuredShortcuts = options.config.shortcuts.pasteImage;
-  const shortcuts = getImagePasteShortcuts(options.config);
-  const skippedShortcuts = configuredShortcuts?.filter(
+  const requestedShortcuts = configuredShortcuts ?? getImagePasteShortcutCandidates(platform);
+  const shortcuts = getImagePasteShortcuts(options.config, platform);
+  const skippedShortcuts = requestedShortcuts.filter(
     (shortcut) => !shortcuts.some((registeredShortcut) => normalizeShortcutKey(registeredShortcut) === normalizeShortcutKey(shortcut)),
-  ) ?? [];
+  );
 
   options.logger.log("keybindings.register", {
     avoidBuiltinConflicts: options.config.shortcuts.avoidBuiltinConflicts,
     suppressBuiltinConflictWarnings: options.config.shortcuts.suppressBuiltinConflictWarnings,
     configured: configuredShortcuts !== undefined,
+    platform,
+    requestedShortcuts,
     registeredShortcuts: shortcuts,
     skippedShortcuts,
   });
