@@ -131,7 +131,23 @@ test("transcodeToSupportedFormat normalizes the source MIME before deriving the 
   assert.deepEqual(calls[0].args, ["bmp:-", "png:-"]);
 });
 
-test("transcodeToSupportedFormat falls back to `convert` when `magick` is missing", () => {
+test("transcodeToSupportedFormat uses only the modern magick launcher by default on Windows", () => {
+  const { runner, calls } = makeRunner((command) => {
+    const error = Object.assign(new Error(`spawn ${command} ENOENT`), { code: "ENOENT" });
+    return { error, status: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), pid: 0, output: [], signal: null };
+  });
+  assert.throws(
+    () => transcodeToSupportedFormat(
+      { bytes: new Uint8Array(BMP_BYTES), mimeType: "image/x-ms-bmp" },
+      { runner, platform: "win32" },
+    ),
+    /unsupported format "image\/x-ms-bmp".*ImageMagick \(`magick`\)/s,
+  );
+  assert.deepEqual(calls.map((c) => c.command), ["magick"]);
+  assert.deepEqual(calls[0].args, ["bmp:-", "png:-"]);
+});
+
+test("transcodeToSupportedFormat falls back to `convert` when `magick` is missing on Unix-like platforms", () => {
   const { runner, calls } = makeRunner((command) => {
     if (command === "magick") {
       const error = Object.assign(new Error("spawn magick ENOENT"), { code: "ENOENT" });
@@ -141,7 +157,7 @@ test("transcodeToSupportedFormat falls back to `convert` when `magick` is missin
   });
   const result = transcodeToSupportedFormat(
     { bytes: new Uint8Array(BMP_BYTES), mimeType: "image/bmp" },
-    { runner },
+    { runner, platform: "linux" },
   );
   assert.equal(result.mimeType, "image/png");
   assert.deepEqual(calls.map((c) => c.command), ["magick", "convert"]);

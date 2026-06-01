@@ -67,8 +67,8 @@ export async function readClipboardImage(options?: {
   /**
    * Hooks for the post-read transcoding step that normalizes images into a
    * MIME type accepted by model providers. Mainly for tests; the default
-   * implementation shells out to ImageMagick (`magick`/`convert`) only when
-   * the source format isn't already supported.
+   * implementation shells out to ImageMagick only when the source format isn't
+   * already supported.
    */
   transcode?: TranscodeOptions;
 }): Promise<ClipboardImage | null> {
@@ -88,7 +88,7 @@ export async function readClipboardImage(options?: {
   if (result.image) {
     // Providers (notably wl-paste under WSLg) may return formats like
     // image/bmp that model providers reject. Normalize to PNG when needed.
-    return transcodeToSupportedFormat(result.image, options?.transcode);
+    return transcodeToSupportedFormat(result.image, { platform, ...options?.transcode });
   }
 
   if (result.attempts.some((attempt) => attempt.available)) {
