@@ -18,6 +18,10 @@ export interface ImageToolsConfig {
   shortcuts: ImageToolsShortcutConfig;
 }
 
+export interface LoadImageToolsConfigOptions {
+  platform?: NodeJS.Platform;
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -34,9 +38,9 @@ function formatConfigPath(path: string, property: string): string {
   return `${path}${property.length > 0 ? ` property \"${property}\"` : ""}`;
 }
 
-function parseBoolean(value: unknown, property: string, path: string): boolean {
+function parseBoolean(value: unknown, property: string, path: string, defaultValue = false): boolean {
   if (value === undefined) {
-    return false;
+    return defaultValue;
   }
 
   if (typeof value !== "boolean") {
@@ -82,12 +86,17 @@ function parseShortcutList(value: unknown, property: string, path: string): KeyI
   return shortcuts;
 }
 
-function parseShortcutConfig(value: unknown, path: string): ImageToolsShortcutConfig {
+function getDefaultShortcutConfig(platform: NodeJS.Platform): ImageToolsShortcutConfig {
+  return {
+    avoidBuiltinConflicts: platform !== "darwin",
+    suppressBuiltinConflictWarnings: false,
+  };
+}
+
+function parseShortcutConfig(value: unknown, path: string, platform: NodeJS.Platform): ImageToolsShortcutConfig {
+  const defaults = getDefaultShortcutConfig(platform);
   if (value === undefined) {
-    return {
-      avoidBuiltinConflicts: false,
-      suppressBuiltinConflictWarnings: false,
-    };
+    return defaults;
   }
 
   if (!isRecord(value)) {
@@ -98,11 +107,13 @@ function parseShortcutConfig(value: unknown, path: string): ImageToolsShortcutCo
     value.avoidBuiltinConflicts,
     "shortcuts.avoidBuiltinConflicts",
     path,
+    defaults.avoidBuiltinConflicts,
   );
   const suppressBuiltinConflictWarnings = parseBoolean(
     value.suppressBuiltinConflictWarnings,
     "shortcuts.suppressBuiltinConflictWarnings",
     path,
+    defaults.suppressBuiltinConflictWarnings,
   );
   const pasteImage = parseShortcutList(value.pasteImage, "shortcuts.pasteImage", path);
 
@@ -111,31 +122,29 @@ function parseShortcutConfig(value: unknown, path: string): ImageToolsShortcutCo
     : { avoidBuiltinConflicts, suppressBuiltinConflictWarnings, pasteImage };
 }
 
-function parseConfig(rawConfig: unknown, path: string): ImageToolsConfig {
+function parseConfig(rawConfig: unknown, path: string, platform: NodeJS.Platform): ImageToolsConfig {
   if (!isRecord(rawConfig)) {
     throw new Error(`Invalid pi-image-tools config at ${path}: expected a JSON object.`);
   }
 
   return {
     debug: parseBoolean(rawConfig.debug, "debug", path),
-    shortcuts: parseShortcutConfig(rawConfig.shortcuts, path),
+    shortcuts: parseShortcutConfig(rawConfig.shortcuts, path, platform),
   };
 }
 
-export function loadImageToolsConfig(path = getConfigPath()): ImageToolsConfig {
+export function loadImageToolsConfig(path = getConfigPath(), options: LoadImageToolsConfigOptions = {}): ImageToolsConfig {
+  const platform = options.platform ?? process.platform;
   if (!existsSync(path)) {
     return {
       debug: false,
-      shortcuts: {
-        avoidBuiltinConflicts: false,
-        suppressBuiltinConflictWarnings: false,
-      },
+      shortcuts: getDefaultShortcutConfig(platform),
     };
   }
 
   try {
     const rawConfig = JSON.parse(readFileSync(path, "utf-8")) as unknown;
-    return parseConfig(rawConfig, path);
+    return parseConfig(rawConfig, path, platform);
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new Error(`Invalid pi-image-tools config at ${path}: ${error.message}`);
