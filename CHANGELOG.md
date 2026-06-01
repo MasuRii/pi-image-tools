@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Transcode clipboard images that arrive in MIME types model providers reject (most notably `image/bmp` from WSLg's Wayland clipboard bridge for Windows clipboard images, and `image/tiff` from some macOS sources) into PNG via ImageMagick before attaching them. Previously, pasting a Windows screenshot inside WSL produced an `Unknown image type: image/bmp` error from the model provider that blocked the message from being sent.
+
 ## [1.3.0] - 2026-06-01
 
 ### Added

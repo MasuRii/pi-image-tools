@@ -1,4 +1,5 @@
 import { hasGraphicalSession, isWaylandSession } from "./shell-environment.js";
+import { transcodeToSupportedFormat, type TranscodeOptions } from "./image-transcode.js";
 import { NativeModuleProvider } from "./providers/native-module.js";
 import { OsascriptPngfProvider } from "./providers/mac-osascript-pngf.js";
 import { OsascriptPublicPngProvider } from "./providers/mac-osascript-publicpng.js";
@@ -63,6 +64,13 @@ export async function readClipboardImage(options?: {
   environment?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   registry?: ClipboardProviderRegistry;
+  /**
+   * Hooks for the post-read transcoding step that normalizes images into a
+   * MIME type accepted by model providers. Mainly for tests; the default
+   * implementation shells out to ImageMagick (`magick`/`convert`) only when
+   * the source format isn't already supported.
+   */
+  transcode?: TranscodeOptions;
 }): Promise<ClipboardImage | null> {
   const environment = options?.environment ?? process.env;
   const platform = options?.platform ?? process.platform;
@@ -78,7 +86,9 @@ export async function readClipboardImage(options?: {
   const registry = options?.registry ?? buildDefaultClipboardProviderRegistry(platform, environment);
   const result = await registry.read({ platform, environment });
   if (result.image) {
-    return result.image;
+    // Providers (notably wl-paste under WSLg) may return formats like
+    // image/bmp that model providers reject. Normalize to PNG when needed.
+    return transcodeToSupportedFormat(result.image, options?.transcode);
   }
 
   if (result.attempts.some((attempt) => attempt.available)) {
