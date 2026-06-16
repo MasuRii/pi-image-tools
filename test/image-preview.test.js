@@ -123,6 +123,7 @@ const inlineUserPreviewModule = await import(pathToFileURL(join(TEST_DIST_DIR, "
 const codingAgentModule = await import("@earendil-works/pi-coding-agent");
 
 const { buildPreviewItems } = imagePreviewModule;
+const { getBase64DecodedByteLength } = await import(pathToFileURL(join(TEST_DIST_DIR, "src", "image-size.js")).href);
 const {
   DEFAULT_TERMINAL_IMAGE_WIDTH_CELLS,
   resolveTerminalImageWidthCells,
@@ -411,6 +412,39 @@ test("recent image attachment loads enforce the configured max image byte limit"
   } finally {
     fixture.cleanup();
   }
+});
+
+test("recent image attachment loads re-check actual bytes when candidate metadata is stale", () => {
+  const fixture = createFixture();
+  const imagePath = join(fixture.projectDir, "stale-size.png");
+
+  try {
+    writeFileSync(imagePath, Buffer.from([1, 2]));
+
+    assert.throws(
+      () =>
+        loadRecentImage(
+          {
+            path: imagePath,
+            name: "stale-size.png",
+            mimeType: "image/png",
+            modifiedAtMs: Date.now(),
+            sizeBytes: 1,
+          },
+          { PI_IMAGE_TOOLS_MAX_IMAGE_BYTES: "1" },
+        ),
+      /Recent image stale-size\.png is too large/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("base64 byte length rejects malformed image payloads with impossible padding", () => {
+  // ASSUMED: preview size validation should not undercount malformed base64 that
+  // Node would still decode into bytes, otherwise max-image-byte enforcement can
+  // be bypassed before preview conversion.
+  assert.equal(getBase64DecodedByteLength("===="), Buffer.from("====", "base64").length);
 });
 
 test("inline user preview schedules session patches and adds preview below latest user message", async () => {

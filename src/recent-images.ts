@@ -462,6 +462,7 @@ export function loadRecentImage(
 ): ClipboardImage {
   assertImageWithinByteLimit(candidate.sizeBytes, `Recent image ${candidate.name}`, environment);
   const raw = readFileSync(candidate.path);
+  assertImageWithinByteLimit(raw.length, `Recent image ${candidate.name}`, environment);
   if (raw.length === 0) {
     throw new Error(`File is empty: ${candidate.path}`);
   }

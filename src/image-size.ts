@@ -57,7 +57,6 @@ export function getBase64DecodedByteLength(base64Data: string): number {
     return 0;
   }
 
-  const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
-  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+  return Buffer.from(normalized, "base64").length;
 }
 
